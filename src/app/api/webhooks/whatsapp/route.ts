@@ -90,8 +90,9 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to resolve or create conversation ID.');
     }
 
-    // 4. Save the message to messages table (sender_type: 'atendente' if fromMe is true, else 'cliente')
-    const senderType = fromMe ? 'atendente' : 'cliente';
+    // 4. Save the message to messages table (sender_type: 'agent' if fromMe is true, else 'client')
+    // We map it to 'agent'/'client' because pg check constraint allows only these terms.
+    const senderType = fromMe ? 'agent' : 'client';
     const { error: msgError } = await supabase
       .from('messages')
       .insert({
@@ -115,6 +116,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ success: true }, { status: 200 });
 
   } catch (error: any) {
+    console.log('Erro Supabase:', error);
     console.error('Error processing Z-API webhook:', error);
     return Response.json(
       { success: false, error: error.message || 'Internal Server Error' },
