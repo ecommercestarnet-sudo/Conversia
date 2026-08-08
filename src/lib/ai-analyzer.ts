@@ -38,7 +38,7 @@ export async function analyzeConversation(conversationId: string) {
   try {
     formattedHistory = messages
       .map((msg) => {
-        const sender = msg.sender_type === 'agent' ? 'atendente' : 'cliente';
+        const sender = (msg.sender_type === 'agent' || msg.sender_type === 'atendente') ? 'atendente' : 'cliente';
         return `[${sender}]: ${msg.content}`;
       })
       .join('\n');

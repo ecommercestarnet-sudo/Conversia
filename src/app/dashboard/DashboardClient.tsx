@@ -40,7 +40,7 @@ interface Analysis {
 
 interface Message {
   id: string | number;
-  sender_type: 'agent' | 'client';
+  sender_type: 'agent' | 'client' | 'atendente' | 'cliente';
   content: string;
   created_at: string;
 }
@@ -607,7 +607,7 @@ export default function DashboardClient({ initialConversations }: DashboardClien
                   ) : (
                     <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2 flex flex-col">
                       {sortedMessages.map((msg) => {
-                        const isAgent = msg.sender_type === 'agent';
+                        const isAgent = msg.sender_type === 'agent' || msg.sender_type === 'atendente';
                         return (
                           <div
                             key={msg.id}

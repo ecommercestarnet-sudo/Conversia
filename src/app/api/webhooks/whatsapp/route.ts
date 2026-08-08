@@ -7,23 +7,20 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log('Z-API Webhook payload received:', JSON.stringify(body, null, 2));
 
-    // 1. Ignore if body.isGroup is true or if body.fromMe is true
+    // 1. Ignore message ONLY if it is from a group (isGroup is true)
     if (body.isGroup === true) {
       console.log('Webhook ignored: message is from a group (isGroup is true).');
       return Response.json({ success: true, message: 'Group messages are ignored.' }, { status: 200 });
     }
 
-    if (body.fromMe === true) {
-      console.log('Webhook ignored: message is sent by the agent (fromMe is true).');
-      return Response.json({ success: true, message: 'Agent sent messages are ignored.' }, { status: 200 });
-    }
+    // Handle both agent messages (fromMe === true) and client messages (fromMe === false)
+    const fromMe = body.fromMe === true;
 
     // 2. Extract phone from body.phone and text from body.text?.message or body.body
     let rawPhone = body.phone;
     let clientPhone = '';
     if (rawPhone) {
       if (typeof rawPhone === 'string') {
-        // Extract DDI + DDD + Number part
         const phonePart = rawPhone.split('@')[0];
         clientPhone = phonePart.replace(/[^0-9]/g, '');
       } else if (typeof rawPhone === 'number') {
@@ -93,12 +90,13 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to resolve or create conversation ID.');
     }
 
-    // 4. Save the message to messages table (sender_type = 'client')
+    // 4. Save the message to messages table (sender_type: 'atendente' if fromMe is true, else 'cliente')
+    const senderType = fromMe ? 'atendente' : 'cliente';
     const { error: msgError } = await supabase
       .from('messages')
       .insert({
         conversation_id: conversationId,
-        sender_type: 'client',
+        sender_type: senderType,
         content: content,
       });
 
@@ -107,7 +105,7 @@ export async function POST(request: NextRequest) {
       throw msgError;
     }
 
-    console.log(`Message successfully saved. Conversation ID: ${conversationId}, Sender: client`);
+    console.log(`Message successfully saved. Conversation ID: ${conversationId}, Sender Type: ${senderType}`);
 
     // 5. Execute analyzeConversation synchronously with await
     console.log(`Executing AI analysis synchronously for conversation ID: ${conversationId}`);
