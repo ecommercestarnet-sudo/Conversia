@@ -84,12 +84,28 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
 
+    // 1. Fetch the first company's ID to associate with the conversation
+    let companyId: string | null = null
+    const { data: companies, error: companyError } = await supabase
+      .from('companies')
+      .select('id')
+      .limit(1)
+
+    if (companyError) {
+      console.error('Error fetching company from database:', companyError)
+    } else if (companies && companies.length > 0) {
+      companyId = companies[0].id
+      console.log(`Associated company ID: ${companyId}`)
+    } else {
+      console.warn('No companies found in database.')
+    }
+
     let conversationId: string | number | null = null
 
     // Search or create conversation in conversations table
     const { data: existingConv, error: selectError } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, company_id')
       .eq('client_phone', clientPhone)
       .maybeSingle()
 
@@ -100,10 +116,22 @@ Deno.serve(async (req) => {
 
     if (existingConv) {
       conversationId = existingConv.id
+      // Update existing conversation if company_id is null
+      if (existingConv.company_id === null && companyId) {
+        console.log(`Updating existing conversation ${conversationId} to set company_id: ${companyId}`)
+        const { error: updateConvError } = await supabase
+          .from('conversations')
+          .update({ company_id: companyId })
+          .eq('id', conversationId)
+        
+        if (updateConvError) {
+          console.error(`Error updating conversation ${conversationId} with company_id:`, updateConvError)
+        }
+      }
     } else {
       const { data: newConv, error: insertError } = await supabase
         .from('conversations')
-        .insert({ client_phone: clientPhone })
+        .insert({ client_phone: clientPhone, company_id: companyId })
         .select('id')
         .maybeSingle()
 
@@ -113,7 +141,7 @@ Deno.serve(async (req) => {
         // Fallback retry block for concurrent inserts
         const { data: retryConv, error: retryError } = await supabase
           .from('conversations')
-          .select('id')
+          .select('id, company_id')
           .eq('client_phone', clientPhone)
           .maybeSingle()
 
@@ -128,6 +156,18 @@ Deno.serve(async (req) => {
         }
         
         conversationId = retryConv.id
+        // Update retryConv if company_id is null
+        if (retryConv.company_id === null && companyId) {
+          console.log(`Updating retried conversation ${conversationId} to set company_id: ${companyId}`)
+          const { error: updateRetryError } = await supabase
+            .from('conversations')
+            .update({ company_id: companyId })
+            .eq('id', conversationId)
+          
+          if (updateRetryError) {
+            console.error(`Error updating retried conversation ${conversationId} with company_id:`, updateRetryError)
+          }
+        }
       } else if (newConv) {
         conversationId = newConv.id
       }
@@ -153,6 +193,18 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Message successfully saved. Conversation ID: ${conversationId}, Sender Type: ${senderType}`)
+
+    // 3. Batch update other conversations where company_id is null
+    if (companyId) {
+      const { error: updateAllError } = await supabase
+        .from('conversations')
+        .update({ company_id: companyId })
+        .is('company_id', null)
+
+      if (updateAllError) {
+        console.error('Error batch updating conversations with null company_id:', updateAllError)
+      }
+    }
 
     // Execute analyzeConversation synchronously
     try {
