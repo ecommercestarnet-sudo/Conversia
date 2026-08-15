@@ -142,6 +142,33 @@ Deno.serve(async (req) => {
         console.log(`[Evolution Manager] Webhook configured successfully for ${instanceName}`)
       }
 
+      // 4. Configure instance settings to save messages (required for media fetching)
+      console.log(`[Evolution Manager] Configuring settings for ${instanceName} to enable alwaysOnline...`)
+      const settingsSetUrl = `${apiUrl.replace(/\/$/, '')}/settings/set/${instanceName}`
+      const settingsResp = await fetch(settingsSetUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': apiKey
+        },
+        body: JSON.stringify({
+          rejectCall: false,
+          msgCall: "",
+          groupsIgnore: false,
+          alwaysOnline: true,
+          readMessages: true,
+          readStatus: false,
+          syncFullHistory: false
+        })
+      })
+
+      if (!settingsResp.ok) {
+        const errText = await settingsResp.text()
+        console.error(`[Evolution Manager] Failed to configure settings for instance: ${errText}`)
+      } else {
+        console.log(`[Evolution Manager] Settings configured successfully for ${instanceName}`)
+      }
+
       // Check if QR code was returned directly during creation
       const createQrcode = createData.base64 || createData.qrcode?.base64
       if (createQrcode) {
