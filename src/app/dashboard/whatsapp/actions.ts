@@ -138,31 +138,9 @@ export async function getWhatsAppStatus(companyId: string) {
 
 export async function connectWhatsApp(companyId: string) {
   try {
-    // 1. Get or generate instance name
-    const { data: company, error: selectError } = await supabase
-      .from('companies')
-      .select('evolution_instance_name')
-      .eq('id', companyId)
-      .maybeSingle();
-
-    if (selectError || !company) {
-      return { success: false, error: 'Empresa não encontrada' };
-    }
-
-    let instanceName = company.evolution_instance_name;
-    if (!instanceName) {
-      // Generate a unique instance name using company ID and a random suffix to prevent container session caching issues
-      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-      instanceName = `instance-${companyId.slice(0, 8)}-${randomSuffix}`;
-      await supabase
-        .from('companies')
-        .update({ evolution_instance_name: instanceName, whatsapp_status: 'disconnected' })
-        .eq('id', companyId);
-    }
-
-    // 2. Call the Supabase Edge Function to handle Evolution API create/connect and webhook configuration
+    // 1. Call the Supabase Edge Function to handle Evolution API create/connect and webhook configuration
     const edgeFunctionUrl = `${SUPABASE_URL?.replace(/\/$/, '')}/functions/v1/evolution-manager`;
-    console.log(`[Next.js Server Action] Calling Edge Function: ${edgeFunctionUrl} for instance: ${instanceName}`);
+    console.log(`[Next.js Server Action] Calling Edge Function: ${edgeFunctionUrl} for companyId: ${companyId}`);
     
     const resp = await fetch(edgeFunctionUrl, {
       method: 'POST',
@@ -171,8 +149,7 @@ export async function connectWhatsApp(companyId: string) {
       },
       body: JSON.stringify({
         action: 'connect',
-        companyId,
-        instanceName
+        companyId
       })
     });
 
@@ -187,7 +164,7 @@ export async function connectWhatsApp(companyId: string) {
     const data = await resp.json();
     console.log(`[Next.js Server Action] Edge Function response data:`, JSON.stringify(data));
     revalidatePath('/dashboard/whatsapp');
-    return { success: true, ...data, instanceName };
+    return { success: true, ...data };
   } catch (error: any) {
     console.error('Error in connectWhatsApp:', error);
     return { success: false, error: error.message || 'Erro interno no servidor' };

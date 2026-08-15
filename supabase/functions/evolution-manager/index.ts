@@ -15,8 +15,8 @@ Deno.serve(async (req) => {
   try {
     const { action, companyId, instanceName } = await req.json()
 
-    if (!companyId || !instanceName) {
-      return new Response(JSON.stringify({ error: 'companyId and instanceName are required' }), {
+    if (!companyId || (!instanceName && action !== 'connect')) {
+      return new Response(JSON.stringify({ error: 'companyId is required, and instanceName is required for disconnect' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400
       })
@@ -63,165 +63,163 @@ Deno.serve(async (req) => {
     }
 
     // Action: CONNECT (Get or Create Instance and return QR Code)
-    console.log(`[Evolution Manager] Connecting instance: ${instanceName} for company: ${companyId}`)
+    console.log(`[Evolution Manager] Connecting instance for company: ${companyId}`)
 
-    // 1. Check if the instance already exists
-    // Endpoint: GET /instance/connectionState/{instanceName}
-    const stateUrl = `${apiUrl.replace(/\/$/, '')}/instance/connectionState/${instanceName}`
-    const stateResp = await fetch(stateUrl, {
-      method: 'GET',
-      headers: { 'apikey': apiKey }
+    // 1. Fetch current instance name from DB if it exists
+    const { data: company, error: selectError } = await supabase
+      .from('companies')
+      .select('evolution_instance_name')
+      .eq('id', companyId)
+      .maybeSingle()
+
+    if (selectError) {
+      throw new Error(`Failed to fetch company from DB: ${selectError.message}`)
+    }
+
+    const oldInstanceName = company?.evolution_instance_name
+
+    // 2. If an old instance name exists, delete it from Evolution API to prevent session recycling
+    if (oldInstanceName) {
+      console.log(`[Evolution Manager] Deleting old instance ${oldInstanceName} to avoid session reuse...`)
+      const deleteUrl = `${apiUrl.replace(/\/$/, '')}/instance/delete/${oldInstanceName}`
+      try {
+        const deleteResp = await fetch(deleteUrl, {
+          method: 'DELETE',
+          headers: { 'apikey': apiKey }
+        })
+        if (deleteResp.ok) {
+          console.log(`[Evolution Manager] Old instance ${oldInstanceName} deleted successfully.`)
+        } else {
+          console.warn(`[Evolution Manager] Evolution delete instance returned status ${deleteResp.status}`)
+        }
+      } catch (err) {
+        console.warn(`[Evolution Manager] Failed to delete old instance ${oldInstanceName}:`, err)
+      }
+    }
+
+    // 3. Generate a brand new unique instance name
+    const newInstanceName = `org_${companyId}_${Math.floor(Date.now() / 1000)}`
+    console.log(`[Evolution Manager] Generated new instance name: ${newInstanceName}`)
+
+    // 4. Create the new instance on Evolution API
+    const createUrl = `${apiUrl.replace(/\/$/, '')}/instance/create`
+    const createResp = await fetch(createUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': apiKey
+      },
+      body: JSON.stringify({
+        instanceName: newInstanceName,
+        qrcode: true,
+        integration: 'WHATSAPP-BAILEYS'
+      })
     })
 
-    let instanceExists = false
-    let connectionState = 'close'
+    if (!createResp.ok) {
+      const errText = await createResp.text()
+      throw new Error(`Failed to create instance on Evolution API: ${createResp.statusText} - ${errText}`)
+    }
 
-    if (stateResp.ok) {
-      const stateData = await stateResp.json()
-      instanceExists = true
-      connectionState = stateData.instance?.state || 'close'
-      console.log(`[Evolution Manager] Instance ${instanceName} exists. State: ${connectionState}`)
+    const createData = await createResp.json()
+    console.log(`[Evolution Manager] Instance ${newInstanceName} created successfully.`)
+
+    // 5. Configure webhook automatically for this new instance
+    const webhookUrlSetting = `${supabaseUrl}/functions/v1/whatsapp-webhook`
+    console.log(`[Evolution Manager] Configuring webhook for ${newInstanceName} pointing to: ${webhookUrlSetting}`)
+    
+    const webhookSetUrl = `${apiUrl.replace(/\/$/, '')}/webhook/set/${newInstanceName}`
+    const webhookResp = await fetch(webhookSetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': apiKey
+      },
+      body: JSON.stringify({
+        webhook: {
+          enabled: true,
+          url: webhookUrlSetting,
+          byEvents: false,
+          base64: true,
+          events: [
+            'MESSAGES_UPSERT',
+            'CONNECTION_UPDATE'
+          ]
+        }
+      })
+    })
+
+    if (!webhookResp.ok) {
+      const errText = await webhookResp.text()
+      console.error(`[Evolution Manager] Failed to configure webhook for instance: ${errText}`)
     } else {
-      console.log(`[Evolution Manager] Instance ${instanceName} does not exist. Status: ${stateResp.status}. Creating a new one...`)
+      console.log(`[Evolution Manager] Webhook configured successfully for ${newInstanceName}`)
     }
 
-    // 2. If it does not exist, create it
-    if (!instanceExists) {
-      const createUrl = `${apiUrl.replace(/\/$/, '')}/instance/create`
-      const createResp = await fetch(createUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': apiKey
-        },
-        body: JSON.stringify({
-          instanceName: instanceName,
-          qrcode: true,
-          integration: 'WHATSAPP-BAILEYS'
-        })
+    // 6. Configure settings for this new instance (alwaysOnline & readMessages)
+    console.log(`[Evolution Manager] Configuring settings for ${newInstanceName} to enable alwaysOnline...`)
+    const settingsSetUrl = `${apiUrl.replace(/\/$/, '')}/settings/set/${newInstanceName}`
+    const settingsResp = await fetch(settingsSetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': apiKey
+      },
+      body: JSON.stringify({
+        rejectCall: false,
+        msgCall: "",
+        groupsIgnore: false,
+        alwaysOnline: true,
+        readMessages: true,
+        readStatus: false,
+        syncFullHistory: false
       })
-
-      if (!createResp.ok) {
-        const errText = await createResp.text()
-        throw new Error(`Failed to create instance on Evolution API: ${createResp.statusText} - ${errText}`)
-      }
-
-      const createData = await createResp.json()
-      console.log(`[Evolution Manager] Instance ${instanceName} created successfully.`)
-
-      // 3. Configure webhook automatically for this new instance
-      // Endpoint: POST /webhook/set/{instanceName}
-      const webhookUrlSetting = `${supabaseUrl}/functions/v1/whatsapp-webhook`
-      console.log(`[Evolution Manager] Configuring webhook for ${instanceName} pointing to: ${webhookUrlSetting}`)
-      
-      const webhookSetUrl = `${apiUrl.replace(/\/$/, '')}/webhook/set/${instanceName}`
-      const webhookResp = await fetch(webhookSetUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': apiKey
-        },
-        body: JSON.stringify({
-          webhook: {
-            enabled: true,
-            url: webhookUrlSetting,
-            byEvents: false,
-            base64: true,
-            events: [
-              'MESSAGES_UPSERT',
-              'CONNECTION_UPDATE'
-            ]
-          }
-        })
-      })
-
-      if (!webhookResp.ok) {
-        const errText = await webhookResp.text()
-        console.error(`[Evolution Manager] Failed to configure webhook for instance: ${errText}`)
-      } else {
-        console.log(`[Evolution Manager] Webhook configured successfully for ${instanceName}`)
-      }
-
-      // 4. Configure instance settings to save messages (required for media fetching)
-      console.log(`[Evolution Manager] Configuring settings for ${instanceName} to enable alwaysOnline...`)
-      const settingsSetUrl = `${apiUrl.replace(/\/$/, '')}/settings/set/${instanceName}`
-      const settingsResp = await fetch(settingsSetUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': apiKey
-        },
-        body: JSON.stringify({
-          rejectCall: false,
-          msgCall: "",
-          groupsIgnore: false,
-          alwaysOnline: true,
-          readMessages: true,
-          readStatus: false,
-          syncFullHistory: false
-        })
-      })
-
-      if (!settingsResp.ok) {
-        const errText = await settingsResp.text()
-        console.error(`[Evolution Manager] Failed to configure settings for instance: ${errText}`)
-      } else {
-        console.log(`[Evolution Manager] Settings configured successfully for ${instanceName}`)
-      }
-
-      // Check if QR code was returned directly during creation
-      const createQrcode = createData.base64 || createData.qrcode?.base64
-      if (createQrcode) {
-        return new Response(JSON.stringify({
-          success: true,
-          qrcode: createQrcode,
-          status: 'connecting'
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200
-        })
-      }
-    }
-
-    // 4. If instance exists and is already connected (open), just return success
-    if (connectionState === 'open') {
-      // Update database status
-      await supabase
-        .from('companies')
-        .update({ whatsapp_status: 'connected' })
-        .eq('id', companyId)
-
-      return new Response(JSON.stringify({
-        success: true,
-        qrcode: null,
-        status: 'connected'
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200
-      })
-    }
-
-    // 5. If instance exists but is not connected, retrieve the QR Code
-    // Endpoint: GET /instance/connect/{instanceName}
-    console.log(`[Evolution Manager] Fetching QR Code for instance: ${instanceName}`)
-    const connectUrl = `${apiUrl.replace(/\/$/, '')}/instance/connect/${instanceName}`
-    const connectResp = await fetch(connectUrl, {
-      method: 'GET',
-      headers: { 'apikey': apiKey }
     })
 
-    if (!connectResp.ok) {
-      const errText = await connectResp.text()
-      throw new Error(`Failed to retrieve QR code from Evolution API: ${connectResp.statusText} - ${errText}`)
+    if (!settingsResp.ok) {
+      const errText = await settingsResp.text()
+      console.error(`[Evolution Manager] Failed to configure settings for instance: ${errText}`)
+    } else {
+      console.log(`[Evolution Manager] Settings configured successfully for ${newInstanceName}`)
     }
 
-    const connectData = await connectResp.json()
-    const qrcodeBase64 = connectData.base64 || connectData.qrcode?.base64 || null
+    // 7. Save the new instance name to the DB (companies table)
+    console.log(`[Evolution Manager] Saving new instance ${newInstanceName} to companies table...`)
+    const { error: updateError } = await supabase
+      .from('companies')
+      .update({ 
+        evolution_instance_name: newInstanceName, 
+        whatsapp_status: 'disconnected' 
+      })
+      .eq('id', companyId)
+
+    if (updateError) {
+      console.error(`[Evolution Manager] Failed to update DB with new instance name: ${updateError.message}`)
+    }
+
+    // 8. Retrieve the QR Code from the response data or connect endpoint
+    const createQrcode = createData.base64 || createData.qrcode?.base64 || null
+    let qrcodeBase64 = createQrcode
+
+    if (!qrcodeBase64) {
+      console.log(`[Evolution Manager] Fetching QR Code via connect endpoint for instance: ${newInstanceName}`)
+      const connectUrl = `${apiUrl.replace(/\/$/, '')}/instance/connect/${newInstanceName}`
+      const connectResp = await fetch(connectUrl, {
+        method: 'GET',
+        headers: { 'apikey': apiKey }
+      })
+
+      if (connectResp.ok) {
+        const connectData = await connectResp.json()
+        qrcodeBase64 = connectData.base64 || connectData.qrcode?.base64 || null
+      }
+    }
 
     return new Response(JSON.stringify({
       success: true,
       qrcode: qrcodeBase64,
-      status: 'connecting'
+      status: 'connecting',
+      instanceName: newInstanceName
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200
