@@ -348,7 +348,7 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
                     <li>Toque em <strong>Conectar um aparelho</strong>.</li>
                     <li>Aponte a câmera do seu celular para o QR Code ao lado para realizar a leitura.</li>
                   </ol>
-                  <div className="pt-2">
+                  <div className="pt-2 flex flex-wrap gap-3">
                     <button
                       onClick={handleConnect}
                       disabled={isLoadingQr}
@@ -356,6 +356,23 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${isLoadingQr ? 'animate-spin' : ''}`} />
                       Recarregar QR Code
+                    </button>
+                    <button
+                      onClick={handleDisconnect}
+                      disabled={isDisconnecting}
+                      className="px-4 py-2 bg-slate-950 hover:bg-rose-955/20 border border-slate-900 hover:border-rose-950/40 text-slate-400 hover:text-rose-450 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      {isDisconnecting ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Cancelando...
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-3.5 h-3.5" />
+                          Cancelar e Resetar
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>

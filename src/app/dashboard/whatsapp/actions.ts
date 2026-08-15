@@ -124,8 +124,9 @@ export async function connectWhatsApp(companyId: string) {
 
     let instanceName = company.evolution_instance_name;
     if (!instanceName) {
-      // Generate a unique instance name using company ID
-      instanceName = `instance-${companyId}`;
+      // Generate a unique instance name using company ID and a random suffix to prevent container session caching issues
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      instanceName = `instance-${companyId.slice(0, 8)}-${randomSuffix}`;
       await supabase
         .from('companies')
         .update({ evolution_instance_name: instanceName, whatsapp_status: 'disconnected' })
