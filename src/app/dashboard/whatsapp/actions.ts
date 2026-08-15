@@ -134,7 +134,7 @@ export async function connectWhatsApp(companyId: string) {
 
     // 2. Call the Supabase Edge Function to handle Evolution API create/connect and webhook configuration
     const edgeFunctionUrl = `${SUPABASE_URL?.replace(/\/$/, '')}/functions/v1/evolution-manager`;
-    console.log(`[Next.js Server Action] Calling Edge Function: ${edgeFunctionUrl}`);
+    console.log(`[Next.js Server Action] Calling Edge Function: ${edgeFunctionUrl} for instance: ${instanceName}`);
     
     const resp = await fetch(edgeFunctionUrl, {
       method: 'POST',
@@ -148,12 +148,16 @@ export async function connectWhatsApp(companyId: string) {
       })
     });
 
+    console.log(`[Next.js Server Action] Edge Function response status: ${resp.status}`);
+
     if (!resp.ok) {
       const errText = await resp.text();
+      console.error(`[Next.js Server Action] Edge Function returned error: ${errText}`);
       return { success: false, error: `Edge Function error: ${errText}` };
     }
 
     const data = await resp.json();
+    console.log(`[Next.js Server Action] Edge Function response data:`, JSON.stringify(data));
     revalidatePath('/dashboard/whatsapp');
     return { success: true, ...data, instanceName };
   } catch (error: any) {
