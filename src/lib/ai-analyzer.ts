@@ -76,11 +76,32 @@ export async function analyzeConversation(conversationId: string) {
       } else if (playbookData) {
         playbook = playbookData;
         console.log(`[AI Analyzer] Playbook loaded successfully for company ${companyId}`);
-      } else {
-        console.log(`[AI Analyzer] No playbook found in database for company ${companyId}. Using default values.`);
       }
     } catch (err: any) {
       console.error(`[AI Analyzer] Failed to fetch playbook for company ${companyId}:`, err);
+    }
+  }
+
+  // Fallback: Se não encontrar o playbook para o ID específico, busca o primeiro cadastrado
+  if (!playbook) {
+    try {
+      console.log(`[AI Analyzer] No playbook found for company_id ${companyId}. Attempting fallback to the first playbook in database.`);
+      const { data: fallbackPlaybook, error: fallbackError } = await supabase
+        .from('ai_playbooks')
+        .select('company_context, knowledge_base, evaluation_criteria, custom_prompt')
+        .limit(1)
+        .maybeSingle();
+
+      if (fallbackError) {
+        console.error(`[AI Analyzer] Error fetching fallback playbook:`, fallbackError);
+      } else if (fallbackPlaybook) {
+        playbook = fallbackPlaybook;
+        console.log(`[AI Analyzer] Fallback playbook loaded successfully.`);
+      } else {
+        console.log(`[AI Analyzer] No playbooks found in database at all. Using default values.`);
+      }
+    } catch (err: any) {
+      console.error(`[AI Analyzer] Failed to fetch fallback playbook:`, err);
     }
   }
 
@@ -118,7 +139,11 @@ export async function analyzeConversation(conversationId: string) {
     customPrompt
   });
 
+  console.log("Playbook carregado:", playbook);
+
   const systemPrompt = `Você é um avaliador de vendas. Sua tarefa é analisar o histórico de conversas entre o cliente e o atendente e retornar uma análise estruturada estritamente no formato JSON fornecido abaixo.
+
+ATENÇÃO: Você DEVE julgar o atendimento ESTRITAMENTE com base no Playbook fornecido. Se uma regra dos "Critérios de Avaliação" não foi cumprida pelo vendedor, você é OBRIGADO a penalizar a nota e citar a regra exata que foi ignorada.
 
 O JSON de retorno deve possuir exatamente a seguinte estrutura:
 {
