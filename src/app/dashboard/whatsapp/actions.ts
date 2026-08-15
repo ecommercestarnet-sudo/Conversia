@@ -3,9 +3,41 @@
 import { supabase } from '@/lib/supabase';
 import { revalidatePath } from 'next/cache';
 
-const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
+import fs from 'fs';
+import path from 'path';
+
+let EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+let EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+
+// Fallback manual parser for .env.local (useful if Next.js hasn't restarted yet to load new envs)
+if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+  try {
+    const envPath = path.resolve(process.cwd(), '.env.local');
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, 'utf8');
+      envContent.split(/\r?\n/).forEach(line => {
+        const parts = line.split('=');
+        if (parts.length >= 2) {
+          const key = parts[0].trim();
+          let value = parts.slice(1).join('=').trim();
+          if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+          if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+          
+          if (key === 'EVOLUTION_API_URL') EVOLUTION_API_URL = value;
+          if (key === 'EVOLUTION_API_KEY') EVOLUTION_API_KEY = value;
+        }
+      });
+    }
+  } catch (e) {
+    console.error('Failed to parse .env.local fallback:', e);
+  }
+}
+
+console.log('[WhatsApp Server Actions] Evolution API Config loaded:', {
+  url: EVOLUTION_API_URL,
+  key: EVOLUTION_API_KEY ? 'configured' : 'not configured'
+});
 
 export async function getWhatsAppStatus(companyId: string) {
   try {
