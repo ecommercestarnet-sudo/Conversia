@@ -478,30 +478,68 @@ function base64ToBytes(base64: string): Uint8Array {
 
 async function transcribeAudio(audioBytes: Uint8Array, mimeType: string, openAiApiKey: string): Promise<string> {
   const formData = new FormData()
+
+  // Print first 16 bytes in hex for diagnostics
+  const firstBytes = Array.from(audioBytes.slice(0, 16))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join(' ')
+  console.log(`[Whisper] Primeiros 16 bytes do áudio: ${firstBytes}`)
   
-  // Resolve extension and clean mimetype based on input mimeType
+  // Resolve extension and clean mimetype from magic bytes
   let filename = 'audio.ogg'
   let cleanMimeType = 'audio/ogg'
-  const mime = mimeType.toLowerCase()
-  if (mime.includes('mpeg') || mime.includes('mp3')) {
-    filename = 'audio.mp3'
-    cleanMimeType = 'audio/mpeg'
-  } else if (mime.includes('wav')) {
-    filename = 'audio.wav'
-    cleanMimeType = 'audio/wav'
-  } else if (mime.includes('m4a') || mime.includes('mp4')) {
-    filename = 'audio.m4a'
-    cleanMimeType = 'audio/mpeg'
-  } else if (mime.includes('webm')) {
-    filename = 'audio.webm'
-    cleanMimeType = 'audio/webm'
-  } else {
-    filename = 'audio.ogg'
-    cleanMimeType = 'audio/ogg'
+
+  if (audioBytes.length >= 4) {
+    // OggS (ogg)
+    if (audioBytes[0] === 0x4f && audioBytes[1] === 0x67 && audioBytes[2] === 0x67 && audioBytes[3] === 0x53) {
+      filename = 'audio.ogg'
+      cleanMimeType = 'audio/ogg'
+    }
+    // RIFF (wav)
+    else if (audioBytes[0] === 0x52 && audioBytes[1] === 0x49 && audioBytes[2] === 0x46 && audioBytes[3] === 0x46) {
+      filename = 'audio.wav'
+      cleanMimeType = 'audio/wav'
+    }
+    // fLaC (flac)
+    else if (audioBytes[0] === 0x66 && audioBytes[1] === 0x4c && audioBytes[2] === 0x61 && audioBytes[3] === 0x43) {
+      filename = 'audio.flac'
+      cleanMimeType = 'audio/flac'
+    }
+    // ftyp (M4A/MP4) at offset 4
+    else if (audioBytes.length >= 8 && audioBytes[4] === 0x66 && audioBytes[5] === 0x74 && audioBytes[6] === 0x79 && audioBytes[7] === 0x70) {
+      filename = 'audio.m4a'
+      cleanMimeType = 'audio/mp4'
+    }
+    // MP3 (starts with ID3 or 0xFF frame sync)
+    else if ((audioBytes[0] === 0x49 && audioBytes[1] === 0x44 && audioBytes[2] === 0x33) || audioBytes[0] === 0xFF) {
+      filename = 'audio.mp3'
+      cleanMimeType = 'audio/mpeg'
+    }
+    // Fallback: Resolve using input mimeType string
+    else {
+      const mime = mimeType.toLowerCase()
+      if (mime.includes('mpeg') || mime.includes('mp3')) {
+        filename = 'audio.mp3'
+        cleanMimeType = 'audio/mpeg'
+      } else if (mime.includes('wav')) {
+        filename = 'audio.wav'
+        cleanMimeType = 'audio/wav'
+      } else if (mime.includes('m4a') || mime.includes('mp4')) {
+        filename = 'audio.m4a'
+        cleanMimeType = 'audio/mp4'
+      } else if (mime.includes('webm')) {
+        filename = 'audio.webm'
+        cleanMimeType = 'audio/webm'
+      } else {
+        filename = 'audio.ogg'
+        cleanMimeType = 'audio/ogg'
+      }
+    }
   }
 
-  const file = new File([audioBytes], filename, { type: cleanMimeType })
-  formData.append('file', file)
+  // Create standard Blob with standard MIME type
+  const blob = new Blob([audioBytes], { type: cleanMimeType })
+  formData.append('file', blob, filename)
   formData.append('model', 'whisper-1')
 
   console.log(`[Whisper] Sending transcription request to OpenAI with filename: ${filename}, mimetype: ${cleanMimeType}, size: ${audioBytes.length} bytes`)
