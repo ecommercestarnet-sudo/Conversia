@@ -90,6 +90,52 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Initialize Supabase Client with service role key to bypass RLS
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    
+    if (!supabaseServiceRoleKey) {
+      console.error('CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not defined in the environment!')
+    }
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
+
+    // 1. Fetch the company ID that matches the evolution_instance_name from the payload
+    const instanceName = reqBody.instance || reqBody.instanceName || ''
+    let companyId: string | null = null
+
+    if (instanceName) {
+      const { data: companyData, error: companyError } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('evolution_instance_name', instanceName)
+        .maybeSingle()
+
+      if (companyError) {
+        console.error(`Error fetching company by instance name "${instanceName}":`, companyError)
+      } else if (companyData) {
+        companyId = companyData.id
+        console.log(`Associated company ID: ${companyId} for instance: ${instanceName}`)
+      }
+    }
+
+    if (!companyId) {
+      console.warn(`[whatsapp-webhook] Company not found for instance "${instanceName}". Falling back to first company.`)
+      const { data: companies, error: companyError } = await supabase
+        .from('companies')
+        .select('id')
+        .limit(1)
+
+      if (companyError) {
+        console.error('Error fetching company fallback from database:', companyError)
+      } else if (companies && companies.length > 0) {
+        companyId = companies[0].id
+        console.log(`Associated fallback company ID: ${companyId}`)
+      } else {
+        console.warn('No companies found in database.')
+      }
+    }
+
     // Extract content from message: audio processing or text conversations
     let content = ''
     const rawMessage = data.message
@@ -139,13 +185,20 @@ Deno.serve(async (req) => {
         if (!audioBytes) {
           console.log('Áudio não encontrado no payload. Buscando na Evolution API...')
           const messageId = key.id
-          const instance = reqBody.instance || Deno.env.get('EVOLUTION_INSTANCE') || Deno.env.get('EVOLUTION_INSTANCE_NAME')
+          
+          let dbInstanceName = null
+          if (companyId) {
+            const { data: companyData } = await supabase.from('companies').select('evolution_instance_name').eq('id', companyId).maybeSingle()
+            if (companyData) dbInstanceName = companyData.evolution_instance_name
+          }
+          
+          const instance = dbInstanceName || reqBody.instance || reqBody.instanceName
           const apiUrl = Deno.env.get('EVOLUTION_API_URL')
           const apiKey = Deno.env.get('EVOLUTION_API_KEY')
 
           console.log(`Configurações de busca - ID Mensagem: ${messageId}, Instância: ${instance}, API URL: ${apiUrl}, API Key: ${apiKey ? 'presente' : 'ausente'}`)
 
-          if (messageId && instance && apiUrl && apiKey) {
+          if (key && instance && apiUrl && apiKey) {
             const url = `${apiUrl.replace(/\/$/, '')}/chat/getBase64FromMediaMessage/${instance}`
             console.log(`Fazendo requisição POST para: ${url}`)
             const mediaResp = await fetch(url, {
@@ -155,7 +208,7 @@ Deno.serve(async (req) => {
                 'apikey': apiKey
               },
               body: JSON.stringify({
-                message: { key: { id: messageId } },
+                message: reqBody.data,
                 convertToMp4: false
               })
             })
@@ -175,7 +228,7 @@ Deno.serve(async (req) => {
               throw new Error(`Failed to fetch media from Evolution API: ${mediaResp.statusText} - ${errText}`)
             }
           } else {
-            throw new Error(`Missing credentials/IDs to fetch audio from Evolution API. messageId: ${messageId}, instance: ${instance}, apiUrl: ${apiUrl ? 'presente' : 'ausente'}, apiKey: ${apiKey ? 'presente' : 'ausente'}`)
+            throw new Error(`Missing credentials/IDs to fetch audio from Evolution API. messageId: ${messageId}, instance: ${instance}`)
           }
         }
 
@@ -195,7 +248,7 @@ Deno.serve(async (req) => {
       } catch (audioError) {
         const err = audioError as Error
         console.error('Erro detalhado Whisper:', err)
-        content = '[Áudio não transcrito]'
+        content = `[Erro na transcrição: ${err.message}]`
       }
     } else if (rawMessage) {
       if (typeof message.conversation === 'string') {
@@ -211,32 +264,6 @@ Deno.serve(async (req) => {
         headers: { 'Content-Type': 'application/json' },
         status: 200
       })
-    }
-
-    // Initialize Supabase Client with service role key to bypass RLS
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
-    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    
-    if (!supabaseServiceRoleKey) {
-      console.error('CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not defined in the environment!')
-    }
-    
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
-
-    // 1. Fetch the first company's ID to associate with the conversation
-    let companyId: string | null = null
-    const { data: companies, error: companyError } = await supabase
-      .from('companies')
-      .select('id')
-      .limit(1)
-
-    if (companyError) {
-      console.error('Error fetching company from database:', companyError)
-    } else if (companies && companies.length > 0) {
-      companyId = companies[0].id
-      console.log(`Associated company ID: ${companyId}`)
-    } else {
-      console.warn('No companies found in database.')
     }
 
     let conversationId: string | number | null = null
