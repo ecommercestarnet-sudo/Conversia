@@ -153,7 +153,8 @@ Deno.serve(async (req) => {
           content = '[Áudio sem conteúdo/transcrição vazia]'
         }
       } catch (audioError) {
-        console.error('Falha no processamento/transcrição do áudio:', audioError)
+        const err = audioError as Error
+        console.error('Falha no processamento/transcrição do áudio:', err.message, err.stack)
         content = '[Áudio não transcrito]'
       }
     } else if (rawMessage) {
@@ -460,26 +461,38 @@ function base64ToBytes(base64: string): Uint8Array {
 async function transcribeAudio(audioBytes: Uint8Array, mimeType: string, openAiApiKey: string): Promise<string> {
   const formData = new FormData()
   
-  // Resolve extension based on mimeType
+  // Resolve extension and clean mimetype based on input mimeType
   let filename = 'audio.ogg'
+  let cleanMimeType = 'audio/ogg'
   const mime = mimeType.toLowerCase()
   if (mime.includes('mpeg') || mime.includes('mp3')) {
     filename = 'audio.mp3'
+    cleanMimeType = 'audio/mpeg'
   } else if (mime.includes('wav')) {
     filename = 'audio.wav'
-  } else if (mime.includes('m4a')) {
+    cleanMimeType = 'audio/wav'
+  } else if (mime.includes('m4a') || mime.includes('mp4')) {
     filename = 'audio.m4a'
+    cleanMimeType = 'audio/mpeg'
   } else if (mime.includes('webm')) {
     filename = 'audio.webm'
-  } else if (mime.includes('ogg') || mime.includes('opus')) {
+    cleanMimeType = 'audio/webm'
+  } else {
     filename = 'audio.ogg'
+    cleanMimeType = 'audio/ogg'
   }
 
-  const blob = new Blob([audioBytes], { type: mimeType })
-  formData.append('file', blob, filename)
+  let file: File | Blob
+  try {
+    file = new File([audioBytes], filename, { type: cleanMimeType })
+  } catch {
+    file = new Blob([audioBytes], { type: cleanMimeType })
+  }
+
+  formData.append('file', file, filename)
   formData.append('model', 'whisper-1')
 
-  console.log(`[Whisper] Sending transcription request to OpenAI with filename: ${filename}, size: ${audioBytes.length} bytes`)
+  console.log(`[Whisper] Sending transcription request to OpenAI with filename: ${filename}, mimetype: ${cleanMimeType}, size: ${audioBytes.length} bytes`)
   const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
     headers: {
