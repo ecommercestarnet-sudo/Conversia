@@ -126,7 +126,19 @@ Deno.serve(async (req) => {
 
     // 5. Configure webhook automatically for this new instance
     const webhookUrlSetting = `${supabaseUrl}/functions/v1/whatsapp-webhook`
-    console.log(`[Evolution Manager] Configuring webhook for ${newInstanceName} pointing to: ${webhookUrlSetting}`)
+    const webhookPayload = {
+      webhook: {
+        enabled: true,
+        url: webhookUrlSetting,
+        byEvents: false,
+        base64: true,
+        events: [
+          'MESSAGES_UPSERT',
+          'CONNECTION_UPDATE'
+        ]
+      }
+    }
+    console.log(`[Evolution Manager] Configuring webhook for ${newInstanceName} with payload:`, JSON.stringify(webhookPayload))
     
     const webhookSetUrl = `${apiUrl.replace(/\/$/, '')}/webhook/set/${newInstanceName}`
     const webhookResp = await fetch(webhookSetUrl, {
@@ -135,18 +147,7 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
         'apikey': apiKey
       },
-      body: JSON.stringify({
-        webhook: {
-          enabled: true,
-          url: webhookUrlSetting,
-          byEvents: false,
-          base64: true,
-          events: [
-            'MESSAGES_UPSERT',
-            'CONNECTION_UPDATE'
-          ]
-        }
-      })
+      body: JSON.stringify(webhookPayload)
     })
 
     if (!webhookResp.ok) {
