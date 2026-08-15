@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import OpenAI from 'npm:openai'
+
 
 Deno.serve(async (req) => {
   try {
@@ -364,10 +364,6 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     return
   }
 
-  const openai = new OpenAI({
-    apiKey: openAiApiKey,
-  })
-
   const systemPrompt = `Você é um auditor de inteligência comercial especializado em analisar atendimentos de vendas para academias.
 Sua tarefa é analisar o histórico de conversas entre o cliente e o atendente da academia e retornar uma análise estruturada estritamente no formato JSON fornecido abaixo.
 
@@ -408,18 +404,40 @@ Regras de Negócio para a Avaliação Comercial de Academias:
 
 Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou qualquer outro texto explicativo fora do JSON.`
 
-  console.log(`[AI Analyzer] Dispatching completion request to OpenAI API (gpt-4o-mini)...`)
-  const response = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Aqui está o histórico do atendimento:\n\n${formattedHistory}` },
-    ],
-    response_format: { type: 'json_object' },
-  })
+  console.log(`[AI Analyzer] Dispatching completion request to OpenAI API (gpt-4o-mini) via fetch...`)
+  let response: Response
+  try {
+    response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${openAiApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Aqui está o histórico do atendimento:\n\n${formattedHistory}` },
+        ],
+        response_format: { type: 'json_object' },
+      })
+    })
+  } catch (fetchError) {
+    const err = fetchError as Error
+    console.error(`[AI Analyzer] Network or connection error calling OpenAI API:`, err.message, err.stack)
+    throw err
+  }
+
+  if (!response.ok) {
+    const errText = await response.text()
+    console.error(`[AI Analyzer] OpenAI API returned error status ${response.status}:`, errText)
+    throw new Error(`OpenAI API error: ${response.statusText} - ${errText}`)
+  }
+
+  const completionData = await response.json()
   console.log(`[AI Analyzer] OpenAI API completion response received successfully.`)
 
-  const resultText = response.choices[0]?.message?.content || '{}'
+  const resultText = completionData.choices?.[0]?.message?.content || '{}'
   const analysisResult = JSON.parse(resultText)
   console.log(`[AI Analyzer] Parsed JSON response successfully for conversation ${conversationId}`)
 
