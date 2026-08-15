@@ -36,7 +36,7 @@ if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
 
 // Fallback para valores padrão do VPS (caso não configurado no Vercel/Ambiente)
 if (!EVOLUTION_API_URL) {
-  EVOLUTION_API_URL = 'http://216.238.122.167:8080';
+  EVOLUTION_API_URL = 'https://evolution-evolution-api.j9jxz3z.easypanel.host';
 }
 if (!EVOLUTION_API_KEY) {
   EVOLUTION_API_KEY = 'minha_chave_secreta_123';
