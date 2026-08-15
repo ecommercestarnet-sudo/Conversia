@@ -102,7 +102,34 @@ export async function getWhatsAppStatus(companyId: string) {
       revalidatePath('/dashboard');
     }
 
-    return { success: true, status, instanceName, state };
+    // 4. Fetch connected phone number if state is open
+    let connectedPhone: string | null = null;
+    if (status === 'connected') {
+      try {
+        const fetchUrl = `${EVOLUTION_API_URL?.replace(/\/$/, '')}/instance/fetchInstances`;
+        const fetchResp = await fetch(fetchUrl, {
+          method: 'GET',
+          headers: {
+            'apikey': EVOLUTION_API_KEY || ''
+          }
+        });
+        if (fetchResp.ok) {
+          const instances = await fetchResp.json();
+          const list = Array.isArray(instances) ? instances : (instances.instances || []);
+          const match = list.find((inst: any) => (inst.name || inst.instanceName) === instanceName);
+          if (match) {
+            const rawOwner = match.ownerJid || match.phone || null;
+            if (rawOwner) {
+              connectedPhone = rawOwner.split('@')[0].replace(/[^0-9]/g, '');
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Error fetching connected phone number:', e);
+      }
+    }
+
+    return { success: true, status, instanceName, state, connectedPhone };
   } catch (error: any) {
     console.error('Error in getWhatsAppStatus:', error);
     return { success: false, error: error.message || 'Erro interno no servidor' };

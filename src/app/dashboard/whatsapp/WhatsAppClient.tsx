@@ -34,6 +34,7 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
     company?.whatsapp_status === 'connected' ? 'connected' : 'disconnected'
   );
   const [qrcode, setQrcode] = useState<string | null>(null);
+  const [connectedPhone, setConnectedPhone] = useState<string | null>(null);
   
   // Loading and error states
   const [isInitializing, setIsInitializing] = useState(true);
@@ -73,8 +74,10 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
       if (res.status === 'connected') {
         setStatus('connected');
         setQrcode(null);
+        setConnectedPhone(res.connectedPhone || null);
       } else {
         setStatus('disconnected');
+        setConnectedPhone(null);
       }
     } else {
       setError(res.error || 'Erro ao checar status do WhatsApp');
@@ -98,6 +101,7 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
         if (res.success && res.status === 'connected') {
           setStatus('connected');
           setQrcode(null);
+          setConnectedPhone(res.connectedPhone || null);
           clearInterval(interval);
         }
       }, 5000); // Poll every 5 seconds
@@ -120,15 +124,19 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
       if (res.status === 'connected') {
         setStatus('connected');
         setQrcode(null);
+        setConnectedPhone(res.connectedPhone || null);
       } else if (res.qrcode) {
         setQrcode(res.qrcode);
+        setConnectedPhone(null);
       } else {
         setError('QR Code não retornado pela API. Tente novamente.');
         setStatus('disconnected');
+        setConnectedPhone(null);
       }
     } else {
       setError(res.error || 'Erro ao conectar com a Evolution API');
       setStatus('disconnected');
+      setConnectedPhone(null);
     }
     
     setIsLoadingQr(false);
@@ -148,6 +156,7 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
     if (res.success) {
       setStatus('disconnected');
       setQrcode(null);
+      setConnectedPhone(null);
     } else {
       setError(res.error || 'Erro ao desconectar WhatsApp');
     }
@@ -234,7 +243,7 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
                     <h2 className="text-base font-semibold text-slate-200">Status do Dispositivo</h2>
                     <p className="text-xs text-slate-400 mt-1 leading-relaxed">
                       {status === 'connected' 
-                        ? 'Seu número de WhatsApp está conectado com sucesso ao painel ConversIA. O robô está ouvindo e auditando as conversas.' 
+                        ? `Seu número de WhatsApp está conectado com sucesso ao painel ConversIA${connectedPhone ? ` (${connectedPhone})` : ''}. O robô está ouvindo e auditando as conversas.` 
                         : status === 'connecting'
                           ? 'Aguardando escaneamento do QR Code. O status atualizará automaticamente assim que conectado.'
                           : 'Seu número está desconectado. Para iniciar a análise comercial automática das conversas, conecte um número de WhatsApp.'}
@@ -386,9 +395,17 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
                   <CheckCircle2 className="w-8 h-8" />
                 </div>
                 <h3 className="text-base font-bold text-emerald-450 mb-2">WhatsApp Conectado com Sucesso!</h3>
-                <p className="text-xs text-slate-455 max-w-md mb-8 leading-relaxed">
+                <p className="text-xs text-slate-455 max-w-md mb-4 leading-relaxed">
                   Seu dispositivo comercial está ativo. O ConversIA está integrado de forma transparente e auditará as mensagens que chegam e saem do número conectado.
                 </p>
+                {connectedPhone && (
+                  <div className="mb-8 p-3 bg-slate-950 border border-slate-900 rounded-xl inline-flex items-center gap-2 animate-fade-in">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    <span className="text-xs text-slate-400">
+                      Número Conectado: <strong className="text-indigo-400 font-semibold">{connectedPhone}</strong>
+                    </span>
+                  </div>
+                )}
                 <button
                   onClick={handleDisconnect}
                   disabled={isDisconnecting}
