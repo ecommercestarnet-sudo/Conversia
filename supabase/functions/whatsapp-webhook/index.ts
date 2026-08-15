@@ -7,6 +7,41 @@ Deno.serve(async (req) => {
     const reqBody = await req.json()
     console.log('Payload completo:', JSON.stringify(reqBody))
 
+    // Handle CONNECTION_UPDATE events (e.g. device_removed / logout)
+    const event = (reqBody.event || '').toLowerCase()
+    if (event === 'connection.update' || event === 'connection_update') {
+      const connData = reqBody.data || {}
+      const state = connData.state || connData.instance?.state || ''
+      const statusReason = connData.statusReason ?? connData.disconnectionReasonCode ?? null
+
+      console.log(`[CONNECTION_UPDATE] state="${state}" statusReason=${statusReason} instance=${reqBody.instance}`)
+
+      // statusReason 401 = device_removed / conflict — mark as disconnected in DB
+      if (state === 'close' || statusReason === 401) {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+        const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
+        const instanceName = reqBody.instance || ''
+
+        if (instanceName) {
+          const { error } = await supabase
+            .from('companies')
+            .update({ whatsapp_status: 'disconnected' })
+            .eq('evolution_instance_name', instanceName)
+          if (error) {
+            console.error('[CONNECTION_UPDATE] Failed to update company status:', error.message)
+          } else {
+            console.log(`[CONNECTION_UPDATE] Marked instance "${instanceName}" as disconnected in DB.`)
+          }
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, message: 'Connection update processed.' }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200
+      })
+    }
+
     const data = reqBody.data
     if (!data) {
       return new Response(JSON.stringify({ success: true, message: 'No data field in payload.' }), {

@@ -128,7 +128,8 @@ Deno.serve(async (req) => {
             byEvents: false,
             base64: false,
             events: [
-              'MESSAGES_UPSERT'
+              'MESSAGES_UPSERT',
+              'CONNECTION_UPDATE'
             ]
           }
         })

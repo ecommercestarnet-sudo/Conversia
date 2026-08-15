@@ -89,7 +89,23 @@ export async function getWhatsAppStatus(companyId: string) {
     }
 
     const data = await resp.json();
-    const state = data.instance?.state || 'close';
+    const rawState = data.instance?.state || 'close';
+
+    // Cross-check with fetchInstances to detect ghost-open sessions (device_removed = code 401)
+    let disconnectCode: number | null = null;
+    try {
+      const fetchUrl = `${EVOLUTION_API_URL?.replace(/\/$/, '')}/instance/fetchInstances`;
+      const fetchResp = await fetch(fetchUrl, { headers: { 'apikey': EVOLUTION_API_KEY || '' } });
+      if (fetchResp.ok) {
+        const list = await fetchResp.json();
+        const instances = Array.isArray(list) ? list : [];
+        const match = instances.find((i: any) => (i.name || i.instanceName) === instanceName);
+        if (match) disconnectCode = match.disconnectionReasonCode ?? null;
+      }
+    } catch { /* non-critical */ }
+
+    // If connectionState says open but disconnectionReasonCode is 401 (device_removed), treat as disconnected
+    const state = (rawState === 'open' && disconnectCode === 401) ? 'close' : rawState;
     const status = state === 'open' ? 'connected' : 'disconnected';
 
     // 3. Update database if the status has changed
