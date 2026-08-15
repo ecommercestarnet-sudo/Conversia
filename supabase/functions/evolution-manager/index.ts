@@ -97,11 +97,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3. Generate a brand new unique instance name
-    const newInstanceName = `org_${companyId}_${Math.floor(Date.now() / 1000)}`
-    console.log(`[Evolution Manager] Generated new instance name: ${newInstanceName}`)
+    // 3. Generate a brand new unique instance name (alphanumeric, short like "atendimento" to avoid DB limitations)
+    const newInstanceName = `c${companyId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10)}`
+    console.log(`[Evolution Manager] Generated short instance name: ${newInstanceName}`)
 
-    // 4. Create the new instance on Evolution API
+    // 4. Create the new instance on Evolution API (configuring the Webhook directly in the creation payload)
+    const webhookUrlSetting = `${supabaseUrl}/functions/v1/whatsapp-webhook`
+    console.log(`[Evolution Manager] Creating instance ${newInstanceName} with webhook pointing to ${webhookUrlSetting}`)
+    
     const createUrl = `${apiUrl.replace(/\/$/, '')}/instance/create`
     const createResp = await fetch(createUrl, {
       method: 'POST',
@@ -112,7 +115,20 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         instanceName: newInstanceName,
         qrcode: true,
-        integration: 'WHATSAPP-BAILEYS'
+        integration: 'WHATSAPP-BAILEYS',
+        webhook: {
+          enabled: true,
+          url: webhookUrlSetting,
+          byEvents: false,
+          base64: false
+        },
+        events: [
+          'MESSAGES_UPSERT',
+          'MESSAGES_UPDATE',
+          'MESSAGES_DELETE',
+          'SEND_MESSAGE',
+          'CONNECTION_UPDATE'
+        ]
       })
     })
 
@@ -122,46 +138,9 @@ Deno.serve(async (req) => {
     }
 
     const createData = await createResp.json()
-    console.log(`[Evolution Manager] Instance ${newInstanceName} created successfully.`)
+    console.log(`[Evolution Manager] Instance ${newInstanceName} created and webhook configured successfully.`)
 
-    // 5. Configure webhook automatically for this new instance
-    const webhookUrlSetting = `${supabaseUrl}/functions/v1/whatsapp-webhook`
-    const webhookPayload = {
-      webhook: {
-        enabled: true,
-        url: webhookUrlSetting,
-        byEvents: false,
-        base64: false,
-        events: [
-          'MESSAGES_UPSERT',
-          'MESSAGES_UPDATE',
-          'MESSAGES_DELETE',
-          'SEND_MESSAGE',
-          'CONNECTION_UPDATE'
-        ]
-      }
-    }
-    console.log(`[Evolution Manager] Configuring webhook for ${newInstanceName} with payload:`, JSON.stringify(webhookPayload))
-    
-    const webhookSetUrl = `${apiUrl.replace(/\/$/, '')}/webhook/set/${newInstanceName}`
-    const webhookResp = await fetch(webhookSetUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': apiKey
-      },
-      body: JSON.stringify(webhookPayload)
-    })
-
-    if (!webhookResp.ok) {
-      const errText = await webhookResp.text()
-      console.error(`[Evolution Manager] Failed to configure webhook for instance: ${errText}`)
-    } else {
-      const respText = await webhookResp.text()
-      console.log(`[Evolution Manager] Webhook configured successfully for ${newInstanceName}. Response: ${respText}`)
-    }
-
-    // 6. Configure settings for this new instance (alwaysOnline & readMessages)
+    // 5. Configure settings for this new instance (alwaysOnline & readMessages)
     console.log(`[Evolution Manager] Configuring settings for ${newInstanceName} to enable alwaysOnline...`)
     const settingsSetUrl = `${apiUrl.replace(/\/$/, '')}/settings/set/${newInstanceName}`
     const settingsResp = await fetch(settingsSetUrl, {
