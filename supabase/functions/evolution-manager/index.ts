@@ -143,10 +143,11 @@ Deno.serve(async (req) => {
       }
 
       // Check if QR code was returned directly during creation
-      if (createData.qrcode?.base64) {
+      const createQrcode = createData.base64 || createData.qrcode?.base64
+      if (createQrcode) {
         return new Response(JSON.stringify({
           success: true,
-          qrcode: createData.qrcode.base64,
+          qrcode: createQrcode,
           status: 'connecting'
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -188,7 +189,7 @@ Deno.serve(async (req) => {
     }
 
     const connectData = await connectResp.json()
-    const qrcodeBase64 = connectData.qrcode?.base64 || null
+    const qrcodeBase64 = connectData.base64 || connectData.qrcode?.base64 || null
 
     return new Response(JSON.stringify({
       success: true,
