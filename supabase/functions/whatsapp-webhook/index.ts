@@ -73,6 +73,7 @@ Deno.serve(async (req) => {
         const audioMessage = message.audioMessage || {}
         const base64Str = audioMessage.base64 || audioMessage.audio
         const isUrl = (str: string) => typeof str === 'string' && (str.startsWith('http://') || str.startsWith('https://'))
+        const isEncryptedUrl = (str: string) => typeof str === 'string' && str.includes('whatsapp.net')
 
         if (base64Str && !isUrl(base64Str)) {
           console.log('Áudio em base64 direto encontrado no payload. Decodificando...')
@@ -82,7 +83,11 @@ Deno.serve(async (req) => {
         } else {
           // Check if URL is provided in payload
           const urlStr = audioMessage.url || audioMessage.mediaUrl || (isUrl(audioMessage.audio) ? audioMessage.audio : null)
-          if (urlStr) {
+          if (urlStr && isEncryptedUrl(urlStr)) {
+            console.log(`URL do áudio no payload é da CDN do WhatsApp (${urlStr}) e está criptografada. Pulando download direto para buscar via Evolution API decriptografada.`)
+          }
+          
+          if (urlStr && !isEncryptedUrl(urlStr)) {
             console.log(`URL do áudio encontrada no payload: ${urlStr}. Baixando...`)
             const downloadResp = await fetch(urlStr)
             if (!downloadResp.ok) {
