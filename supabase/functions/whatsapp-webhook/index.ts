@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
         }
       } catch (audioError) {
         const err = audioError as Error
-        console.error('Falha no processamento/transcrição do áudio:', err.message, err.stack)
+        console.error('Erro detalhado Whisper:', err)
         content = '[Áudio não transcrito]'
       }
     } else if (rawMessage) {
@@ -482,14 +482,8 @@ async function transcribeAudio(audioBytes: Uint8Array, mimeType: string, openAiA
     cleanMimeType = 'audio/ogg'
   }
 
-  let file: File | Blob
-  try {
-    file = new File([audioBytes], filename, { type: cleanMimeType })
-  } catch {
-    file = new Blob([audioBytes], { type: cleanMimeType })
-  }
-
-  formData.append('file', file, filename)
+  const file = new File([audioBytes], filename, { type: cleanMimeType })
+  formData.append('file', file)
   formData.append('model', 'whisper-1')
 
   console.log(`[Whisper] Sending transcription request to OpenAI with filename: ${filename}, mimetype: ${cleanMimeType}, size: ${audioBytes.length} bytes`)
