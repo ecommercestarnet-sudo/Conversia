@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
             enabled: true,
             url: webhookUrlSetting,
             byEvents: false,
-            base64: false,
+            base64: true,
             events: [
               'MESSAGES_UPSERT',
               'CONNECTION_UPDATE'
