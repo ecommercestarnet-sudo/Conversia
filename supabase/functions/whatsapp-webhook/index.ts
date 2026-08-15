@@ -4,10 +4,10 @@ import OpenAI from 'npm:openai'
 Deno.serve(async (req) => {
   try {
     // Read the payload from the Evolution API v2 webhook
-    const body = await req.json()
-    console.log('Evolution API Webhook payload received:', JSON.stringify(body, null, 2))
+    const reqBody = await req.json()
+    console.log('Payload completo:', JSON.stringify(reqBody))
 
-    const data = body.data
+    const data = reqBody.data
     if (!data) {
       return new Response(JSON.stringify({ success: true, message: 'No data field in payload.' }), {
         headers: { 'Content-Type': 'application/json' },
@@ -55,10 +55,108 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Extract content from message: data.message.conversation / extendedTextMessage.text
+    // Extract content from message: audio processing or text conversations
     let content = ''
-    const message = data.message
-    if (message) {
+    const rawMessage = data.message
+    const message = rawMessage || {}
+    const isAudio = !!(message.audioMessage || data.messageType === 'audioMessage')
+
+    if (isAudio) {
+      try {
+        console.log('Áudio detectado. Iniciando recuperação do áudio...')
+        let audioBytes: Uint8Array | null = null
+        let mimeType = 'audio/ogg' // default
+
+        console.log('Tentando baixar áudio via URL/Base64...')
+
+        // Check if there is base64 directly in the payload
+        const audioMessage = message.audioMessage || {}
+        const base64Str = audioMessage.base64 || audioMessage.audio
+        const isUrl = (str: string) => typeof str === 'string' && (str.startsWith('http://') || str.startsWith('https://'))
+
+        if (base64Str && !isUrl(base64Str)) {
+          console.log('Áudio em base64 direto encontrado no payload. Decodificando...')
+          audioBytes = base64ToBytes(base64Str)
+          if (audioMessage.mimetype) mimeType = audioMessage.mimetype
+          console.log(`Áudio decodificado com sucesso. Tamanho: ${audioBytes.length} bytes.`)
+        } else {
+          // Check if URL is provided in payload
+          const urlStr = audioMessage.url || audioMessage.mediaUrl || (isUrl(audioMessage.audio) ? audioMessage.audio : null)
+          if (urlStr) {
+            console.log(`URL do áudio encontrada no payload: ${urlStr}. Baixando...`)
+            const downloadResp = await fetch(urlStr)
+            if (!downloadResp.ok) {
+              throw new Error(`Failed to download audio from payload URL: ${downloadResp.statusText}`)
+            }
+            const arrayBuffer = await downloadResp.arrayBuffer()
+            audioBytes = new Uint8Array(arrayBuffer)
+            if (audioMessage.mimetype) mimeType = audioMessage.mimetype
+            console.log(`Áudio baixado com sucesso da URL direta. Tamanho: ${audioBytes.length} bytes.`)
+          }
+        }
+
+        // Fallback: If we still don't have the audio bytes, fetch it from Evolution API
+        if (!audioBytes) {
+          console.log('Áudio não encontrado no payload. Buscando na Evolution API...')
+          const messageId = key.id
+          const instance = reqBody.instance || Deno.env.get('EVOLUTION_INSTANCE') || Deno.env.get('EVOLUTION_INSTANCE_NAME')
+          const apiUrl = Deno.env.get('EVOLUTION_API_URL')
+          const apiKey = Deno.env.get('EVOLUTION_API_KEY')
+
+          console.log(`Configurações de busca - ID Mensagem: ${messageId}, Instância: ${instance}, API URL: ${apiUrl}, API Key: ${apiKey ? 'presente' : 'ausente'}`)
+
+          if (messageId && instance && apiUrl && apiKey) {
+            const url = `${apiUrl.replace(/\/$/, '')}/chat/getBase64FromMediaMessage/${instance}`
+            console.log(`Fazendo requisição POST para: ${url}`)
+            const mediaResp = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': apiKey
+              },
+              body: JSON.stringify({
+                message: { key: { id: messageId } },
+                convertToMp4: false
+              })
+            })
+
+            if (mediaResp.ok) {
+              const mediaData = await mediaResp.json()
+              if (mediaData && mediaData.base64) {
+                console.log('Áudio obtido com sucesso em base64 da Evolution API.')
+                audioBytes = base64ToBytes(mediaData.base64)
+                if (mediaData.mimetype) mimeType = mediaData.mimetype
+                console.log(`Áudio decodificado da Evolution API. Tamanho: ${audioBytes.length} bytes.`)
+              } else {
+                throw new Error('Evolution API response did not contain base64 field.')
+              }
+            } else {
+              const errText = await mediaResp.text()
+              throw new Error(`Failed to fetch media from Evolution API: ${mediaResp.statusText} - ${errText}`)
+            }
+          } else {
+            throw new Error(`Missing credentials/IDs to fetch audio from Evolution API. messageId: ${messageId}, instance: ${instance}, apiUrl: ${apiUrl ? 'presente' : 'ausente'}, apiKey: ${apiKey ? 'presente' : 'ausente'}`)
+          }
+        }
+
+        // Now transcribe using Whisper
+        console.log(`Iniciando transcrição com OpenAI Whisper. MimeType: ${mimeType}`)
+        const openAiApiKey = Deno.env.get('OPENAI_API_KEY')
+        if (!openAiApiKey) {
+          throw new Error('OPENAI_API_KEY is not defined in environment.')
+        }
+
+        const transcript = await transcribeAudio(audioBytes, mimeType, openAiApiKey)
+        console.log('Resposta do Whisper:', transcript)
+        content = transcript
+        if (!content) {
+          content = '[Áudio sem conteúdo/transcrição vazia]'
+        }
+      } catch (audioError) {
+        console.error('Falha no processamento/transcrição do áudio:', audioError)
+        content = '[Áudio não transcrito]'
+      }
+    } else if (rawMessage) {
       if (typeof message.conversation === 'string') {
         content = message.conversation
       } else if (message.extendedTextMessage && typeof message.extendedTextMessage.text === 'string') {
@@ -67,8 +165,8 @@ Deno.serve(async (req) => {
     }
 
     if (!content) {
-      console.log(`Webhook ignored: no text message content resolved for client phone ${clientPhone}.`)
-      return new Response(JSON.stringify({ success: true, message: 'No text message content resolved.' }), {
+      console.log(`Webhook ignored: no message content resolved for client phone ${clientPhone}.`)
+      return new Response(JSON.stringify({ success: true, message: 'No message content resolved.' }), {
         headers: { 'Content-Type': 'application/json' },
         status: 200
       })
@@ -209,7 +307,7 @@ Deno.serve(async (req) => {
     // Execute analyzeConversation synchronously
     try {
       await analyzeConversation(supabase, String(conversationId))
-    } catch (analysisError: any) {
+    } catch (analysisError) {
       console.error(`[AI Analyzer] Failed to run synchronous analysis:`, analysisError)
       // Do not fail the webhook request if AI analysis fails (avoid message redelivery retries)
     }
@@ -219,16 +317,17 @@ Deno.serve(async (req) => {
       status: 200
     })
 
-  } catch (error: any) {
-    console.error('Error processing Evolution webhook:', error)
-    return new Response(JSON.stringify({ success: false, error: error.message || 'Internal Server Error' }), {
+  } catch (error) {
+    const err = error as Error
+    console.error('Error processing Evolution webhook:', err)
+    return new Response(JSON.stringify({ success: false, error: err.message || 'Internal Server Error' }), {
       headers: { 'Content-Type': 'application/json' },
       status: 500
     })
   }
 })
 
-async function analyzeConversation(supabase: any, conversationId: string) {
+async function analyzeConversation(supabase: ReturnType<typeof createClient>, conversationId: string) {
   console.log(`[AI Analyzer] Starting AI analysis for conversation ID: ${conversationId}`)
 
   // Step 1: Fetch messages from Supabase
@@ -250,7 +349,7 @@ async function analyzeConversation(supabase: any, conversationId: string) {
 
   // Step 2: Format conversation history
   const formattedHistory = messages
-    .map((msg: any) => {
+    .map((msg: { sender_type: string; content: string }) => {
       const sender = (msg.sender_type === 'agent' || msg.sender_type === 'atendente') ? 'atendente' : 'cliente'
       return `[${sender}]: ${msg.content}`
     })
@@ -346,4 +445,56 @@ Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou
   }
 
   console.log(`[AI Analyzer] Analysis successfully saved/updated for conversation ${conversationId}`)
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const cleanBase64 = base64.includes(',') ? base64.split(',')[1] : base64
+  const binaryString = atob(cleanBase64)
+  const bytes = new Uint8Array(binaryString.length)
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i)
+  }
+  return bytes
+}
+
+async function transcribeAudio(audioBytes: Uint8Array, mimeType: string, openAiApiKey: string): Promise<string> {
+  const formData = new FormData()
+  
+  // Resolve extension based on mimeType
+  let filename = 'audio.ogg'
+  const mime = mimeType.toLowerCase()
+  if (mime.includes('mpeg') || mime.includes('mp3')) {
+    filename = 'audio.mp3'
+  } else if (mime.includes('wav')) {
+    filename = 'audio.wav'
+  } else if (mime.includes('m4a')) {
+    filename = 'audio.m4a'
+  } else if (mime.includes('webm')) {
+    filename = 'audio.webm'
+  } else if (mime.includes('ogg') || mime.includes('opus')) {
+    filename = 'audio.ogg'
+  }
+
+  const blob = new Blob([audioBytes], { type: mimeType })
+  formData.append('file', blob, filename)
+  formData.append('model', 'whisper-1')
+
+  console.log(`[Whisper] Sending transcription request to OpenAI with filename: ${filename}, size: ${audioBytes.length} bytes`)
+  const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${openAiApiKey}`
+    },
+    body: formData
+  })
+
+  if (!response.ok) {
+    const errText = await response.text()
+    console.error(`[Whisper] OpenAI Whisper API error (status ${response.status}):`, errText)
+    throw new Error(`Whisper API error: ${response.statusText} - ${errText}`)
+  }
+
+  const result = await response.json()
+  console.log(`[Whisper] Transcription result received successfully. Length: ${result.text?.length || 0}`)
+  return result.text || ''
 }
