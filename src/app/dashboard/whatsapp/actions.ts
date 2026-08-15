@@ -34,6 +34,14 @@ if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
   }
 }
 
+// Fallback para valores padrão do VPS (caso não configurado no Vercel/Ambiente)
+if (!EVOLUTION_API_URL) {
+  EVOLUTION_API_URL = 'http://216.238.122.167:8080';
+}
+if (!EVOLUTION_API_KEY) {
+  EVOLUTION_API_KEY = 'minha_chave_secreta_123';
+}
+
 console.log('[WhatsApp Server Actions] Evolution API Config loaded:', {
   url: EVOLUTION_API_URL,
   key: EVOLUTION_API_KEY ? 'configured' : 'not configured'
