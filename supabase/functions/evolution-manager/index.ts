@@ -134,6 +134,9 @@ Deno.serve(async (req) => {
         base64: true,
         events: [
           'MESSAGES_UPSERT',
+          'MESSAGES_UPDATE',
+          'MESSAGES_DELETE',
+          'SEND_MESSAGE',
           'CONNECTION_UPDATE'
         ]
       }
@@ -154,7 +157,8 @@ Deno.serve(async (req) => {
       const errText = await webhookResp.text()
       console.error(`[Evolution Manager] Failed to configure webhook for instance: ${errText}`)
     } else {
-      console.log(`[Evolution Manager] Webhook configured successfully for ${newInstanceName}`)
+      const respText = await webhookResp.text()
+      console.log(`[Evolution Manager] Webhook configured successfully for ${newInstanceName}. Response: ${respText}`)
     }
 
     // 6. Configure settings for this new instance (alwaysOnline & readMessages)
