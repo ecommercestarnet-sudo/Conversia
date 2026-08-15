@@ -353,6 +353,44 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     return
   }
 
+  // Step 1.5: Fetch conversation's company_id and then the AI playbook
+  const { data: convData, error: convErr } = await supabase
+    .from('conversations')
+    .select('company_id')
+    .eq('id', conversationId)
+    .maybeSingle()
+
+  let companyId = convData?.company_id
+
+  if (!companyId) {
+    console.log(`[AI Analyzer] No company_id directly associated with conversation ${conversationId}. Fetching default company.`)
+    const { data: companies } = await supabase
+      .from('companies')
+      .select('id')
+      .limit(1)
+    if (companies && companies.length > 0) {
+      companyId = companies[0].id
+    }
+  }
+
+  let playbook = null
+  if (companyId) {
+    const { data: playbookData, error: playbookError } = await supabase
+      .from('ai_playbooks')
+      .select('company_context, knowledge_base, evaluation_criteria, custom_prompt')
+      .eq('organization_id', companyId)
+      .maybeSingle()
+
+    if (playbookError) {
+      console.error(`[AI Analyzer] Error fetching playbook for company ${companyId}:`, playbookError)
+    } else if (playbookData) {
+      playbook = playbookData
+      console.log(`[AI Analyzer] Playbook loaded successfully for company ${companyId}`)
+    } else {
+      console.log(`[AI Analyzer] No playbook found in database for company ${companyId}. Using default values.`)
+    }
+  }
+
   // Step 2: Format conversation history
   const formattedHistory = messages
     .map((msg: { sender_type: string; content: string }) => {
@@ -369,8 +407,26 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     return
   }
 
-  const systemPrompt = `Você é um auditor de inteligência comercial especializado em analisar atendimentos de vendas para academias.
-Sua tarefa é analisar o histórico de conversas entre o cliente e o atendente da academia e retornar uma análise estruturada estritamente no formato JSON fornecido abaixo.
+  // Dynamic system prompt construction
+  const companyContext = playbook?.company_context || 'Você é um auditor de inteligência comercial especializado em analisar atendimentos de vendas para academias.'
+  const knowledgeBase = playbook?.knowledge_base || 'Produtos, serviços e preços padrão de uma academia.'
+  const evaluationCriteria = playbook?.evaluation_criteria || `Regras de Negócio para a Avaliação Comercial de Academias:
+- empathy (Empatia): O atendente foi cordial, chamou pelo nome, acolheu as necessidades e objetivos do cliente (ex: emagrecimento, saúde)?
+- response_time (Tempo de Resposta): O atendente respondeu de forma fluida ou demorou? (Se não houver dados de tempo precisos no histórico, avalie a fluidez da conversa e prontidão).
+- investigation (Investigação): O atendente fez perguntas abertas para entender a rotina, histórico de treinos e metas do cliente antes de simplesmente enviar os preços?
+- closing (Fechamento): O atendente tentou agendar uma visita experimental, aula experimental, ou convidou o cliente para conhecer a academia pessoalmente? Fez uma chamada para ação clara?
+- objections (Objeções): Identifique as objeções levantadas pelo cliente (ex: preço alto, distância, falta de tempo, fidelidade do plano, etc.).`
+  const customPrompt = playbook?.custom_prompt || ''
+
+  // Log values at the moment of injection as requested
+  console.log(`[AI Analyzer] Playbook injected dynamic settings for conversation ${conversationId}:`, {
+    companyContext,
+    knowledgeBase,
+    evaluationCriteria,
+    customPrompt
+  })
+
+  const systemPrompt = `Você é um avaliador de vendas. Sua tarefa é analisar o histórico de conversas entre o cliente e o atendente e retornar uma análise estruturada estritamente no formato JSON fornecido abaixo.
 
 O JSON de retorno deve possuir exatamente a seguinte estrutura:
 {
@@ -400,12 +456,17 @@ O JSON de retorno deve possuir exatamente a seguinte estrutura:
   ]
 }
 
-Regras de Negócio para a Avaliação Comercial de Academias:
-- empathy (Empatia): O atendente foi cordial, chamou pelo nome, acolheu as necessidades e objetivos do cliente (ex: emagrecimento, saúde)?
-- response_time (Tempo de Resposta): O atendente respondeu de forma fluida ou demorou? (Se não houver dados de tempo precisos no histórico, avalie a fluidez da conversa e prontidão).
-- investigation (Investigação): O atendente fez perguntas abertas para entender a rotina, histórico de treinos e metas do cliente antes de simplesmente enviar os preços?
-- closing (Fechamento): O atendente tentou agendar uma visita experimental, aula experimental, ou convidou o cliente para conhecer a academia pessoalmente? Fez uma chamada para ação clara?
-- objections (Objeções): Identifique as objeções levantadas pelo cliente (ex: preço alto, distância, falta de tempo, fidelidade do plano, etc.).
+Contexto da empresa:
+${companyContext}
+
+Base de conhecimento (Produtos/Preços/FAQ):
+${knowledgeBase}
+
+Critérios de avaliação:
+${evaluationCriteria}
+
+Instruções adicionais:
+${customPrompt}
 
 Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou qualquer outro texto explicativo fora do JSON.`
 
