@@ -39,7 +39,7 @@ if (!EVOLUTION_API_URL) {
   EVOLUTION_API_URL = 'http://216.238.122.167:8081';
 }
 if (!EVOLUTION_API_KEY) {
-  EVOLUTION_API_KEY = 'minha_chave_secreta_123';
+  EVOLUTION_API_KEY = '429683C4C977415CAAFCCE10F7D57E11';
 }
 
 console.log('[WhatsApp Server Actions] Evolution API Config loaded:', {
