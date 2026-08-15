@@ -230,6 +230,13 @@ export default function DashboardClient({ initialConversations }: DashboardClien
               <span>Playbook de IA</span>
             </button>
             <button
+              onClick={() => router.push('/dashboard/whatsapp')}
+              className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-lg text-sm font-medium text-slate-350 hover:text-white transition-all flex items-center gap-2 cursor-pointer shrink-0"
+            >
+              <Phone className="w-4 h-4" />
+              <span>Conexão WhatsApp</span>
+            </button>
+            <button
               onClick={handleRefresh}
               disabled={isRefreshing}
               className="p-2 bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-lg text-slate-300 hover:text-white transition-all disabled:opacity-50 flex items-center justify-center shrink-0 cursor-pointer"
