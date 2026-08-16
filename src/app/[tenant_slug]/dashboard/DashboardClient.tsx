@@ -56,11 +56,18 @@ interface Conversation {
   messages?: Message[];
 }
 
-interface DashboardClientProps {
-  initialConversations: Conversation[];
+interface Organization {
+  id: string;
+  name: string;
+  whatsapp_status: string | null;
 }
 
-export default function DashboardClient({ initialConversations }: DashboardClientProps) {
+interface DashboardClientProps {
+  initialConversations: Conversation[];
+  organization: Organization;
+}
+
+export default function DashboardClient({ initialConversations, organization }: DashboardClientProps) {
   const router = useRouter();
   const params = useParams();
   const tenantSlug = params.tenant_slug as string;
@@ -266,6 +273,50 @@ export default function DashboardClient({ initialConversations }: DashboardClien
       {/* Main Content Area */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         
+        {/* WhatsApp Status Alert Bar */}
+        {organization?.whatsapp_status !== 'connected' ? (
+          <div className="relative overflow-hidden bg-rose-500/10 border border-rose-500/20 rounded-2xl p-5 mb-8 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-rose-500/10 text-rose-400 rounded-xl border border-rose-500/20 animate-pulse">
+                <Phone className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-rose-400">WhatsApp Desconectado</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Seu robô de auditoria de IA está inativo. Conecte seu dispositivo para começar a analisar conversas.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => router.push(`/${tenantSlug}/dashboard/whatsapp`)}
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-lg shadow-rose-500/15 shrink-0"
+            >
+              <Phone className="w-3.5 h-3.5" />
+              <span>Conectar WhatsApp</span>
+            </button>
+          </div>
+        ) : (
+          <div className="relative overflow-hidden bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 mb-8 flex justify-between items-center gap-4 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
+                <Phone className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-emerald-400">WhatsApp Conectado</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Auditoria ativa em tempo real. Ouvindo conversas no número da sua empresa.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => router.push(`/${tenantSlug}/dashboard/whatsapp`)}
+              className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-lg text-slate-350 hover:text-white transition-all text-xs font-medium cursor-pointer"
+            >
+              Configurar Conexão
+            </button>
+          </div>
+        )}
+
         {/* Top Cards (Metrics Grid) */}
         <section className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           

@@ -48,13 +48,19 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Se o usuário está logado e tentando acessar login/signup ou a raiz '/' ou '/dashboard', redirecione para o tenant dashboard
+  // Se o usuário está logado e tentando acessar login/signup ou a raiz '/' ou '/dashboard', redirecione de acordo com a role
   if (user && (isAuthRoute || request.nextUrl.pathname === '/' || request.nextUrl.pathname === '/dashboard')) {
     const { data: userData } = await supabase
       .from('users')
-      .select('organizations(slug)')
+      .select('role, organizations(slug)')
       .eq('id', user.id)
       .single()
+
+    if (userData?.role === 'superadmin') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/admin'
+      return NextResponse.redirect(url)
+    }
 
     const slug = (userData?.organizations as any)?.slug
     if (slug) {

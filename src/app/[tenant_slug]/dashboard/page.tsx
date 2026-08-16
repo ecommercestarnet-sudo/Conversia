@@ -17,7 +17,7 @@ export default async function DashboardPage({ params }: PageProps) {
   // 1. Fetch organization by slug
   const { data: org, error: orgError } = await supabase
     .from('organizations')
-    .select('id, name')
+    .select('id, name, whatsapp_status')
     .eq('slug', tenant_slug)
     .maybeSingle();
 
@@ -59,6 +59,6 @@ export default async function DashboardPage({ params }: PageProps) {
   }
 
   return (
-    <DashboardClient initialConversations={conversations || []} />
+    <DashboardClient initialConversations={conversations || []} organization={org} />
   );
 }
