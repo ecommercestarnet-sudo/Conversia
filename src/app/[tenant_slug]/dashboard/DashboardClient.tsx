@@ -18,9 +18,11 @@ import {
   UserCheck,
   Zap,
   Target,
-  BookOpen
+  BookOpen,
+  LogOut
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
+import { createBrowserSupabaseClient } from '@/lib/auth-client';
 
 interface Analysis {
   id: string | number;
@@ -60,6 +62,15 @@ interface DashboardClientProps {
 
 export default function DashboardClient({ initialConversations }: DashboardClientProps) {
   const router = useRouter();
+  const params = useParams();
+  const tenantSlug = params.tenant_slug as string;
+
+  const handleSignOut = async () => {
+    const supabase = createBrowserSupabaseClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedId, setSelectedId] = useState<string | number | null>(
     initialConversations.length > 0 ? initialConversations[0].id : null
@@ -223,14 +234,14 @@ export default function DashboardClient({ initialConversations }: DashboardClien
               />
             </div>
             <button
-              onClick={() => router.push('/dashboard/playbook')}
+              onClick={() => router.push(`/${tenantSlug}/dashboard/playbook`)}
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-lg text-sm font-medium text-white transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-500/20 shrink-0"
             >
               <BookOpen className="w-4 h-4" />
               <span>Playbook de IA</span>
             </button>
             <button
-              onClick={() => router.push('/dashboard/whatsapp')}
+              onClick={() => router.push(`/${tenantSlug}/dashboard/whatsapp`)}
               className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-lg text-sm font-medium text-slate-350 hover:text-white transition-all flex items-center gap-2 cursor-pointer shrink-0"
             >
               <Phone className="w-4 h-4" />
@@ -242,6 +253,13 @@ export default function DashboardClient({ initialConversations }: DashboardClien
               className="p-2 bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-lg text-slate-300 hover:text-white transition-all disabled:opacity-50 flex items-center justify-center shrink-0 cursor-pointer"
             >
               <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-indigo-400' : ''}`} />
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="p-2 bg-slate-900 border border-slate-800 hover:border-red-500/30 hover:bg-red-500/10 text-slate-300 hover:text-red-400 rounded-lg transition-all flex items-center justify-center shrink-0 cursor-pointer"
+              title="Sair do Sistema"
+            >
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
         </div>

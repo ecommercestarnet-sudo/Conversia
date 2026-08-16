@@ -11,9 +11,11 @@ import {
   Target,
   Sliders,
   CheckCircle,
-  AlertTriangle
+  AlertTriangle,
+  LogOut
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
+import { createBrowserSupabaseClient } from '@/lib/auth-client';
 import { savePlaybook } from './actions';
 
 interface Company {
@@ -39,6 +41,14 @@ type TabType = 'context' | 'knowledge' | 'criteria' | 'prompt';
 
 export default function PlaybookClient({ company, initialPlaybook }: PlaybookClientProps) {
   const router = useRouter();
+  const params = useParams();
+  const tenantSlug = params.tenant_slug as string;
+
+  const handleSignOut = async () => {
+    const supabase = createBrowserSupabaseClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
   const [activeTab, setActiveTab] = useState<TabType>('context');
   const [isSaving, setIsSaving] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -110,7 +120,7 @@ export default function PlaybookClient({ company, initialPlaybook }: PlaybookCli
         <div className="max-w-4xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push(`/${tenantSlug}/dashboard`)}
               className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700/80 rounded-lg text-slate-400 hover:text-white transition-all cursor-pointer flex items-center justify-center shrink-0"
               title="Voltar ao Dashboard"
             >
@@ -131,8 +141,17 @@ export default function PlaybookClient({ company, initialPlaybook }: PlaybookCli
             </div>
           </div>
 
-          <div className="text-xs px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-400">
-            Empresa ativa: <span className="text-indigo-400 font-medium">{company.name}</span>
+          <div className="flex items-center gap-3">
+            <div className="text-xs px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-400">
+              Empresa ativa: <span className="text-indigo-400 font-medium">{company?.name}</span>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="p-2 bg-slate-900 border border-slate-800 hover:border-red-500/30 hover:bg-red-500/10 text-slate-350 hover:text-red-400 rounded-lg transition-all flex items-center justify-center shrink-0 cursor-pointer"
+              title="Sair do Sistema"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </header>
