@@ -665,16 +665,7 @@ export default function DashboardClient({ initialConversations, organization }: 
 
             </div>
           </div>
-
-          {/* Modal Footer */}
-          <div className="border-t border-slate-900 px-6 py-4 bg-slate-950/60 backdrop-blur-md flex justify-end shrink-0">
-            <button 
-              onClick={() => setIsAuditOpen(false)}
-              className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-200 rounded-xl text-xs font-bold cursor-pointer border border-slate-800 transition-colors shadow-lg"
-            >
-              Fechar Auditoria
-            </button>
-          </div>
+          
         </div>
       )}
     </div>
