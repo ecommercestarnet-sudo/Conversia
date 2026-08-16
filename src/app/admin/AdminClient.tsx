@@ -95,11 +95,11 @@ export default function AdminClient({ initialOrganizations }: AdminClientProps) 
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-md sticky top-0 z-10 px-6 py-4 shadow-sm">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <div className="flex items-center gap-2.5">
-              <img src="/Logo.png" alt="SupervisIA Logo" className="w-8 h-8 object-contain" />
-              <h1 className="text-xl font-bold tracking-tight text-slate-900">
-                SupervisIA Superadmin
-              </h1>
+            <div className="flex items-center gap-3">
+              <img src="/Logo.png" alt="SupervisIA Logo" className="h-10 md:h-12 w-auto object-contain" />
+              <span className="text-[10px] font-black bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200 uppercase tracking-widest shrink-0">
+                Superadmin
+              </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
               Painel do Administrador Global • Monitoramento e Gestão de Contas

@@ -8,7 +8,8 @@ export default function LoginPage({
   return (
     <div className="flex min-h-screen items-center justify-center p-4 bg-gray-50">
       <div className="w-full max-w-md space-y-8 bg-white p-8 rounded-xl shadow-md">
-        <div className="text-center">
+        <div className="text-center flex flex-col items-center">
+          <img src="/Logo.png" alt="SupervisIA Logo" className="h-14 w-auto object-contain mb-4" />
           <h2 className="text-2xl font-bold tracking-tight text-gray-900">Entrar na sua conta</h2>
         </div>
         <form className="mt-8 space-y-6" action={login}>

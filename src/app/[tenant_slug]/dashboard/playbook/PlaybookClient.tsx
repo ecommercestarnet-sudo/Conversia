@@ -123,7 +123,7 @@ export default function PlaybookClient({ company, initialPlaybook }: PlaybookCli
             </button>
             <div>
               <div className="flex items-center gap-2.5">
-                <img src="/Logo.png" alt="SupervisIA Logo" className="w-6 h-6 object-contain" />
+                <img src="/Logo.png" alt="SupervisIA Logo" className="h-8 w-auto object-contain" />
                 <h1 className="text-lg font-bold tracking-tight text-slate-900">
                   Playbook de IA
                 </h1>
