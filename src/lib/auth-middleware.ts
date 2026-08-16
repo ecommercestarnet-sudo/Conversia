@@ -48,8 +48,8 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Se o usuário está logado e tentando acessar login/signup ou a raiz '/', redirecione para o tenant dashboard
-  if (user && (isAuthRoute || request.nextUrl.pathname === '/')) {
+  // Se o usuário está logado e tentando acessar login/signup ou a raiz '/' ou '/dashboard', redirecione para o tenant dashboard
+  if (user && (isAuthRoute || request.nextUrl.pathname === '/' || request.nextUrl.pathname === '/dashboard')) {
     const { data: userData } = await supabase
       .from('users')
       .select('organizations(slug)')
