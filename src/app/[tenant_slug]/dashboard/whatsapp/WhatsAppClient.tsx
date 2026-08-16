@@ -14,7 +14,7 @@ import {
   LogOut
 } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
-import { createBrowserSupabaseClient } from '@/lib/auth-client';
+import { logout } from '@/app/auth-actions';
 import { getWhatsAppStatus, connectWhatsApp, disconnectWhatsApp } from './actions';
 
 interface Company {
@@ -34,9 +34,7 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
   const tenantSlug = params.tenant_slug as string;
 
   const handleSignOut = async () => {
-    const supabase = createBrowserSupabaseClient();
-    await supabase.auth.signOut();
-    router.push('/login');
+    await logout();
   };
   
   // Status states

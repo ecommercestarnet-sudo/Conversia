@@ -22,7 +22,7 @@ import {
   LogOut
 } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
-import { createBrowserSupabaseClient } from '@/lib/auth-client';
+import { logout } from '@/app/auth-actions';
 
 interface Analysis {
   id: string | number;
@@ -66,9 +66,7 @@ export default function DashboardClient({ initialConversations }: DashboardClien
   const tenantSlug = params.tenant_slug as string;
 
   const handleSignOut = async () => {
-    const supabase = createBrowserSupabaseClient();
-    await supabase.auth.signOut();
-    router.push('/login');
+    await logout();
   };
 
   const [searchTerm, setSearchTerm] = useState('');
