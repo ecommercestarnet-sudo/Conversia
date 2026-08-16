@@ -1,22 +1,33 @@
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/auth-server';
+import { redirect } from 'next/navigation';
 import WhatsAppClient from './WhatsAppClient';
 
 export const dynamic = 'force-dynamic';
 
-export default async function WhatsAppPage() {
-  // Fetch the active company
-  const { data: companies, error } = await supabase
-    .from('companies')
-    .select('*')
-    .limit(1);
+interface PageProps {
+  params: Promise<{
+    tenant_slug: string;
+  }>;
+}
 
-  if (error) {
-    console.error('Error fetching company for whatsapp module:', error);
+export default async function WhatsAppPage({ params }: PageProps) {
+  const { tenant_slug } = await params;
+  const supabase = await createClient();
+
+  // 1. Fetch organization by slug
+  const { data: org, error: orgError } = await supabase
+    .from('organizations')
+    .select('*')
+    .eq('slug', tenant_slug)
+    .maybeSingle();
+
+  if (orgError || !org) {
+    console.error('Organization not found for whatsapp page:', tenant_slug, orgError);
+    redirect('/login');
   }
 
-  const company = companies && companies.length > 0 ? companies[0] : null;
-
+  // 2. Render client component, mapping org to company for compatibility
   return (
-    <WhatsAppClient company={company} />
+    <WhatsAppClient company={org} />
   );
 }

@@ -1,6 +1,6 @@
 'use server';
 
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/auth-server';
 import { revalidatePath } from 'next/cache';
 
 export interface PlaybookFormData {
@@ -16,6 +16,8 @@ export async function savePlaybook(data: PlaybookFormData) {
     if (!data.organization_id) {
       return { success: false, error: 'ID da organização é obrigatório.' };
     }
+
+    const supabase = await createClient();
 
     const { error } = await supabase
       .from('ai_playbooks')
@@ -34,8 +36,8 @@ export async function savePlaybook(data: PlaybookFormData) {
       return { success: false, error: error.message };
     }
 
-    revalidatePath('/dashboard/playbook');
-    revalidatePath('/dashboard');
+    revalidatePath('/[tenant_slug]/dashboard/playbook', 'page');
+    revalidatePath('/[tenant_slug]/dashboard', 'page');
     return { success: true };
   } catch (error: any) {
     console.error('Unhandled exception in savePlaybook:', error);

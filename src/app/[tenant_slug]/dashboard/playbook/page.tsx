@@ -1,42 +1,47 @@
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/auth-server';
+import { redirect } from 'next/navigation';
 import PlaybookClient from './PlaybookClient';
 
 export const dynamic = 'force-dynamic';
 
-export default async function PlaybookPage() {
-  // 1. Fetch the first company to act as our tenant
-  const { data: companies, error: companyError } = await supabase
-    .from('companies')
+interface PageProps {
+  params: Promise<{
+    tenant_slug: string;
+  }>;
+}
+
+export default async function PlaybookPage({ params }: PageProps) {
+  const { tenant_slug } = await params;
+  const supabase = await createClient();
+
+  // 1. Fetch organization by slug
+  const { data: org, error: orgError } = await supabase
+    .from('organizations')
+    .select('id, name')
+    .eq('slug', tenant_slug)
+    .maybeSingle();
+
+  if (orgError || !org) {
+    console.error('Organization not found for playbook:', tenant_slug, orgError);
+    redirect('/login');
+  }
+
+  // 2. Fetch the existing playbook for this organization if it exists
+  const { data: playbookData, error: playbookError } = await supabase
+    .from('ai_playbooks')
     .select('*')
-    .limit(1);
+    .eq('organization_id', org.id)
+    .maybeSingle();
 
-  if (companyError) {
-    console.error('Error fetching company for playbook:', companyError);
+  if (playbookError) {
+    console.error('Error fetching playbook data:', playbookError);
   }
 
-  const company = companies && companies.length > 0 ? companies[0] : null;
-
-  // 2. Fetch the existing playbook for this company if it exists
-  let playbook = null;
-  if (company) {
-    const { data: playbookData, error: playbookError } = await supabase
-      .from('ai_playbooks')
-      .select('*')
-      .eq('organization_id', company.id)
-      .maybeSingle();
-
-    if (playbookError) {
-      console.error('Error fetching playbook data:', playbookError);
-    } else {
-      playbook = playbookData;
-    }
-  }
-
-  // 3. Render the client form component
+  // 3. Render the client form component (passing org mapped as 'company' to maintain compatibility)
   return (
     <PlaybookClient 
-      company={company} 
-      initialPlaybook={playbook} 
+      company={org} 
+      initialPlaybook={playbookData} 
     />
   );
 }

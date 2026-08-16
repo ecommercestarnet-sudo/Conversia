@@ -1,13 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-
 Deno.serve(async (req) => {
   try {
-    // Read the payload from the Evolution API v2 webhook
     const reqBody = await req.json()
     console.log('Payload completo:', JSON.stringify(reqBody))
 
-    // Handle CONNECTION_UPDATE events (e.g. device_removed / logout)
     const event = (reqBody.event || '').toLowerCase()
     if (event === 'connection.update' || event === 'connection_update') {
       const connData = reqBody.data || {}
@@ -16,7 +13,6 @@ Deno.serve(async (req) => {
 
       console.log(`[CONNECTION_UPDATE] state="${state}" statusReason=${statusReason} instance=${reqBody.instance}`)
 
-      // statusReason 401 = device_removed / conflict — mark as disconnected in DB
       if (state === 'close' || statusReason === 401) {
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
         const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -25,11 +21,11 @@ Deno.serve(async (req) => {
 
         if (instanceName) {
           const { error } = await supabase
-            .from('companies')
+            .from('organizations')
             .update({ whatsapp_status: 'disconnected' })
             .eq('evolution_instance_name', instanceName)
           if (error) {
-            console.error('[CONNECTION_UPDATE] Failed to update company status:', error.message)
+            console.error('[CONNECTION_UPDATE] Failed to update organization status:', error.message)
           } else {
             console.log(`[CONNECTION_UPDATE] Marked instance "${instanceName}" as disconnected in DB.`)
           }
@@ -59,7 +55,6 @@ Deno.serve(async (req) => {
     }
 
     const remoteJid = key.remoteJid || ''
-    // Ignore message if it is from a group (remoteJid ends with @g.us)
     if (remoteJid.endsWith('@g.us')) {
       console.log('Webhook ignored: message is from a group (ends with @g.us).')
       return new Response(JSON.stringify({ success: true, message: 'Group messages are ignored.' }), {
@@ -70,7 +65,6 @@ Deno.serve(async (req) => {
 
     const fromMe = key.fromMe === true
 
-    // Extract client phone number from remoteJid (or remoteJidAlt if remoteJid ends with @lid)
     let rawPhone = remoteJid
     if (rawPhone.endsWith('@lid') && key.remoteJidAlt) {
       rawPhone = key.remoteJidAlt
@@ -90,7 +84,6 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Initialize Supabase Client with service role key to bypass RLS
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     
@@ -100,43 +93,42 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
 
-    // 1. Fetch the company ID that matches the evolution_instance_name from the payload
+    // 1. Fetch the organization ID that matches the evolution_instance_name from the payload
     const instanceName = reqBody.instance || reqBody.instanceName || ''
-    let companyId: string | null = null
+    let orgId: string | null = null
 
     if (instanceName) {
-      const { data: companyData, error: companyError } = await supabase
-        .from('companies')
+      const { data: orgData, error: orgError } = await supabase
+        .from('organizations')
         .select('id')
         .eq('evolution_instance_name', instanceName)
         .maybeSingle()
 
-      if (companyError) {
-        console.error(`Error fetching company by instance name "${instanceName}":`, companyError)
-      } else if (companyData) {
-        companyId = companyData.id
-        console.log(`Associated company ID: ${companyId} for instance: ${instanceName}`)
+      if (orgError) {
+        console.error(`Error fetching organization by instance name "${instanceName}":`, orgError)
+      } else if (orgData) {
+        orgId = orgData.id
+        console.log(`Associated organization ID: ${orgId} for instance: ${instanceName}`)
       }
     }
 
-    if (!companyId) {
-      console.warn(`[whatsapp-webhook] Company not found for instance "${instanceName}". Falling back to first company.`)
-      const { data: companies, error: companyError } = await supabase
-        .from('companies')
+    if (!orgId) {
+      console.warn(`[whatsapp-webhook] Organization not found for instance "${instanceName}". Falling back to first organization.`)
+      const { data: orgs, error: orgError } = await supabase
+        .from('organizations')
         .select('id')
         .limit(1)
 
-      if (companyError) {
-        console.error('Error fetching company fallback from database:', companyError)
-      } else if (companies && companies.length > 0) {
-        companyId = companies[0].id
-        console.log(`Associated fallback company ID: ${companyId}`)
+      if (orgError) {
+        console.error('Error fetching organization fallback from database:', orgError)
+      } else if (orgs && orgs.length > 0) {
+        orgId = orgs[0].id
+        console.log(`Associated fallback organization ID: ${orgId}`)
       } else {
-        console.warn('No companies found in database.')
+        console.warn('No organizations found in database.')
       }
     }
 
-    // Extract content from message: audio processing or text conversations
     let content = ''
     const rawMessage = data.message
     const message = rawMessage || {}
@@ -146,11 +138,10 @@ Deno.serve(async (req) => {
       try {
         console.log('Áudio detectado. Iniciando recuperação do áudio...')
         let audioBytes: Uint8Array | null = null
-        let mimeType = 'audio/ogg' // default
+        let mimeType = 'audio/ogg'
 
         console.log('Tentando baixar áudio via URL/Base64...')
 
-        // Check if there is base64 directly in the payload
         const audioMessage = message.audioMessage || {}
         const base64Str = audioMessage.base64 || audioMessage.audio
         const isUrl = (str: string) => typeof str === 'string' && (str.startsWith('http://') || str.startsWith('https://'))
@@ -162,7 +153,6 @@ Deno.serve(async (req) => {
           if (audioMessage.mimetype) mimeType = audioMessage.mimetype
           console.log(`Áudio decodificado com sucesso. Tamanho: ${audioBytes.length} bytes.`)
         } else {
-          // Check if URL is provided in payload
           const urlStr = audioMessage.url || audioMessage.mediaUrl || (isUrl(audioMessage.audio) ? audioMessage.audio : null)
           if (urlStr && isEncryptedUrl(urlStr)) {
             console.log(`URL do áudio no payload é da CDN do WhatsApp (${urlStr}) e está criptografada. Pulando download direto para buscar via Evolution API decriptografada.`)
@@ -181,15 +171,14 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Fallback: If we still don't have the audio bytes, fetch it from Evolution API
         if (!audioBytes) {
           console.log('Áudio não encontrado no payload. Buscando na Evolution API...')
           const messageId = key.id
           
           let dbInstanceName = null
-          if (companyId) {
-            const { data: companyData } = await supabase.from('companies').select('evolution_instance_name').eq('id', companyId).maybeSingle()
-            if (companyData) dbInstanceName = companyData.evolution_instance_name
+          if (orgId) {
+            const { data: orgData } = await supabase.from('organizations').select('evolution_instance_name').eq('id', orgId).maybeSingle()
+            if (orgData) dbInstanceName = orgData.evolution_instance_name
           }
           
           const instance = dbInstanceName || reqBody.instance || reqBody.instanceName
@@ -232,7 +221,6 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Now transcribe using Whisper
         console.log(`Iniciando transcrição com OpenAI Whisper. MimeType: ${mimeType}`)
         const openAiApiKey = Deno.env.get('OPENAI_API_KEY')
         if (!openAiApiKey) {
@@ -271,7 +259,7 @@ Deno.serve(async (req) => {
     // Search or create conversation in conversations table
     const { data: existingConv, error: selectError } = await supabase
       .from('conversations')
-      .select('id, company_id')
+      .select('id, organization_id')
       .eq('client_phone', clientPhone)
       .maybeSingle()
 
@@ -282,32 +270,31 @@ Deno.serve(async (req) => {
 
     if (existingConv) {
       conversationId = existingConv.id
-      // Update existing conversation if company_id is null
-      if (existingConv.company_id === null && companyId) {
-        console.log(`Updating existing conversation ${conversationId} to set company_id: ${companyId}`)
+      // Update existing conversation if organization_id is null
+      if (existingConv.organization_id === null && orgId) {
+        console.log(`Updating existing conversation ${conversationId} to set organization_id: ${orgId}`)
         const { error: updateConvError } = await supabase
           .from('conversations')
-          .update({ company_id: companyId })
+          .update({ organization_id: orgId })
           .eq('id', conversationId)
         
         if (updateConvError) {
-          console.error(`Error updating conversation ${conversationId} with company_id:`, updateConvError)
+          console.error(`Error updating conversation ${conversationId} with organization_id:`, updateConvError)
         }
       }
     } else {
       const { data: newConv, error: insertError } = await supabase
         .from('conversations')
-        .insert({ client_phone: clientPhone, company_id: companyId })
+        .insert({ client_phone: clientPhone, organization_id: orgId })
         .select('id')
         .maybeSingle()
 
       if (insertError) {
         console.error('Error inserting new conversation into database:', insertError)
         
-        // Fallback retry block for concurrent inserts
         const { data: retryConv, error: retryError } = await supabase
           .from('conversations')
-          .select('id, company_id')
+          .select('id, organization_id')
           .eq('client_phone', clientPhone)
           .maybeSingle()
 
@@ -322,16 +309,15 @@ Deno.serve(async (req) => {
         }
         
         conversationId = retryConv.id
-        // Update retryConv if company_id is null
-        if (retryConv.company_id === null && companyId) {
-          console.log(`Updating retried conversation ${conversationId} to set company_id: ${companyId}`)
+        if (retryConv.organization_id === null && orgId) {
+          console.log(`Updating retried conversation ${conversationId} to set organization_id: ${orgId}`)
           const { error: updateRetryError } = await supabase
             .from('conversations')
-            .update({ company_id: companyId })
+            .update({ organization_id: orgId })
             .eq('id', conversationId)
           
           if (updateRetryError) {
-            console.error(`Error updating retried conversation ${conversationId} with company_id:`, updateRetryError)
+            console.error(`Error updating retried conversation ${conversationId} with organization_id:`, updateRetryError)
           }
         }
       } else if (newConv) {
@@ -343,7 +329,6 @@ Deno.serve(async (req) => {
       throw new Error('Failed to resolve or create conversation ID.')
     }
 
-    // Save the message to messages table (sender_type: 'agent' if fromMe is true, else 'client')
     const senderType = fromMe ? 'agent' : 'client'
     const { error: msgError } = await supabase
       .from('messages')
@@ -360,24 +345,21 @@ Deno.serve(async (req) => {
 
     console.log(`Message successfully saved. Conversation ID: ${conversationId}, Sender Type: ${senderType}`)
 
-    // 3. Batch update other conversations where company_id is null
-    if (companyId) {
+    if (orgId) {
       const { error: updateAllError } = await supabase
         .from('conversations')
-        .update({ company_id: companyId })
-        .is('company_id', null)
+        .update({ organization_id: orgId })
+        .is('organization_id', null)
 
       if (updateAllError) {
-        console.error('Error batch updating conversations with null company_id:', updateAllError)
+        console.error('Error batch updating conversations with null organization_id:', updateAllError)
       }
     }
 
-    // Execute analyzeConversation synchronously
     try {
       await analyzeConversation(supabase, String(conversationId))
     } catch (analysisError) {
       console.error(`[AI Analyzer] Failed to run synchronous analysis:`, analysisError)
-      // Do not fail the webhook request if AI analysis fails (avoid message redelivery retries)
     }
 
     return new Response(JSON.stringify({ success: true }), {
@@ -398,7 +380,6 @@ Deno.serve(async (req) => {
 async function analyzeConversation(supabase: ReturnType<typeof createClient>, conversationId: string) {
   console.log(`[AI Analyzer] Starting AI analysis for conversation ID: ${conversationId}`)
 
-  // Step 1: Fetch messages from Supabase
   const { data: messages, error: selectError } = await supabase
     .from('messages')
     .select('sender_type, content, created_at')
@@ -415,45 +396,43 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     return
   }
 
-  // Step 1.5: Fetch conversation's company_id and then the AI playbook
   const { data: convData, error: convErr } = await supabase
     .from('conversations')
-    .select('company_id')
+    .select('organization_id')
     .eq('id', conversationId)
     .maybeSingle()
 
-  let companyId = convData?.company_id
+  let orgId = convData?.organization_id
 
-  if (!companyId) {
-    console.log(`[AI Analyzer] No company_id directly associated with conversation ${conversationId}. Fetching default company.`)
-    const { data: companies } = await supabase
-      .from('companies')
+  if (!orgId) {
+    console.log(`[AI Analyzer] No organization_id directly associated with conversation ${conversationId}. Fetching default organization.`)
+    const { data: orgs } = await supabase
+      .from('organizations')
       .select('id')
       .limit(1)
-    if (companies && companies.length > 0) {
-      companyId = companies[0].id
+    if (orgs && orgs.length > 0) {
+      orgId = orgs[0].id
     }
   }
 
   let playbook = null
-  if (companyId) {
+  if (orgId) {
     const { data: playbookData, error: playbookError } = await supabase
       .from('ai_playbooks')
       .select('company_context, knowledge_base, evaluation_criteria, custom_prompt')
-      .eq('organization_id', companyId)
+      .eq('organization_id', orgId)
       .maybeSingle()
 
     if (playbookError) {
-      console.error(`[AI Analyzer] Error fetching playbook for company ${companyId}:`, playbookError)
+      console.error(`[AI Analyzer] Error fetching playbook for organization ${orgId}:`, playbookError)
     } else if (playbookData) {
       playbook = playbookData
-      console.log(`[AI Analyzer] Playbook loaded successfully for company ${companyId}`)
+      console.log(`[AI Analyzer] Playbook loaded successfully for organization ${orgId}`)
     }
   }
 
-  // Fallback: Se não encontrar o playbook para o ID específico, busca o primeiro cadastrado
   if (!playbook) {
-    console.log(`[AI Analyzer] No playbook found for company_id ${companyId}. Attempting fallback to the first playbook in database.`)
+    console.log(`[AI Analyzer] No playbook found for organization_id ${orgId}. Attempting fallback to the first playbook in database.`)
     const { data: fallbackPlaybook, error: fallbackError } = await supabase
       .from('ai_playbooks')
       .select('company_context, knowledge_base, evaluation_criteria, custom_prompt')
@@ -470,7 +449,6 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     }
   }
 
-  // Step 2: Format conversation history
   const formattedHistory = messages
     .map((msg: { sender_type: string; content: string }) => {
       const sender = (msg.sender_type === 'agent' || msg.sender_type === 'atendente') ? 'atendente' : 'cliente'
@@ -479,14 +457,12 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     .join('\n')
   console.log(`[AI Analyzer] Formatted chat history for conversation ${conversationId}:\n${formattedHistory}`)
 
-  // Step 3: Request OpenAI Completion
   const openAiApiKey = Deno.env.get('OPENAI_API_KEY')
   if (!openAiApiKey) {
     console.warn('[AI Analyzer] OPENAI_API_KEY environment variable is not set. Skipping AI analysis.')
     return
   }
 
-  // Dynamic system prompt construction
   const companyContext = playbook?.company_context || 'Você é um auditor de inteligência comercial especializado em analisar atendimentos de vendas para academias.'
   const knowledgeBase = playbook?.knowledge_base || 'Produtos, serviços e preços padrão de uma academia.'
   const evaluationCriteria = playbook?.evaluation_criteria || `Regras de Negócio para a Avaliação Comercial de Academias:
@@ -497,7 +473,6 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
 - objections (Objeções): Identifique as objeções levantadas pelo cliente (ex: preço alto, distância, falta de tempo, fidelidade do plano, etc.).`
   const customPrompt = playbook?.custom_prompt || ''
 
-  // Log values at the moment of injection as requested
   console.log(`[AI Analyzer] Playbook injected dynamic settings for conversation ${conversationId}:`, {
     companyContext,
     knowledgeBase,
@@ -505,12 +480,10 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     customPrompt
   })
 
-  console.log("Playbook carregado:", playbook)
-
   const systemPrompt = `Você é um avaliador de vendas. Sua tarefa é analisar o histórico de conversas entre o cliente e o atendente e retornar uma análise estruturada estritamente no formato JSON fornecido abaixo.
-
+ 
 ATENÇÃO: Você DEVE julgar o atendimento ESTRITAMENTE com base no Playbook fornecido. Se uma regra dos "Critérios de Avaliação" não foi cumprida pelo vendedor, você é OBRIGADO a penalizar a nota e citar a regra exata que foi ignorada.
-
+ 
 O JSON de retorno deve possuir exatamente a seguinte estrutura:
 {
   "overall_score": 85,
@@ -538,19 +511,19 @@ O JSON de retorno deve possuir exatamente a seguinte estrutura:
     "Objeção de horário"
   ]
 }
-
+ 
 Contexto da empresa:
 ${companyContext}
-
+ 
 Base de conhecimento (Produtos/Preços/FAQ):
 ${knowledgeBase}
-
+ 
 Critérios de avaliação:
 ${evaluationCriteria}
-
+ 
 Instruções adicionais:
 ${customPrompt}
-
+ 
 Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou qualquer outro texto explicativo fora do JSON.`
 
   console.log(`[AI Analyzer] Dispatching completion request to OpenAI API (gpt-4o-mini) via fetch...`)
@@ -590,7 +563,6 @@ Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou
   const analysisResult = JSON.parse(resultText)
   console.log(`[AI Analyzer] Parsed JSON response successfully for conversation ${conversationId}`)
 
-  // Step 4: Save analysis JSON to Supabase
   console.log(`[AI Analyzer] Saving analysis to database (analyses table) for conversation ${conversationId}...`)
   const { error: upsertError } = await supabase
     .from('analyses')
@@ -628,43 +600,35 @@ function base64ToBytes(base64: string): Uint8Array {
 async function transcribeAudio(audioBytes: Uint8Array, mimeType: string, openAiApiKey: string): Promise<string> {
   const formData = new FormData()
 
-  // Print first 16 bytes in hex for diagnostics
   const firstBytes = Array.from(audioBytes.slice(0, 16))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join(' ')
   console.log(`[Whisper] Primeiros 16 bytes do áudio: ${firstBytes}`)
   
-  // Resolve extension and clean mimetype from magic bytes
   let filename = 'audio.ogg'
   let cleanMimeType = 'audio/ogg'
 
   if (audioBytes.length >= 4) {
-    // OggS (ogg)
     if (audioBytes[0] === 0x4f && audioBytes[1] === 0x67 && audioBytes[2] === 0x67 && audioBytes[3] === 0x53) {
       filename = 'audio.ogg'
       cleanMimeType = 'audio/ogg'
     }
-    // RIFF (wav)
     else if (audioBytes[0] === 0x52 && audioBytes[1] === 0x49 && audioBytes[2] === 0x46 && audioBytes[3] === 0x46) {
       filename = 'audio.wav'
       cleanMimeType = 'audio/wav'
     }
-    // fLaC (flac)
     else if (audioBytes[0] === 0x66 && audioBytes[1] === 0x4c && audioBytes[2] === 0x61 && audioBytes[3] === 0x43) {
       filename = 'audio.flac'
       cleanMimeType = 'audio/flac'
     }
-    // ftyp (M4A/MP4) at offset 4
     else if (audioBytes.length >= 8 && audioBytes[4] === 0x66 && audioBytes[5] === 0x74 && audioBytes[6] === 0x79 && audioBytes[7] === 0x70) {
       filename = 'audio.m4a'
       cleanMimeType = 'audio/mp4'
     }
-    // MP3 (starts with ID3 or 0xFF frame sync)
     else if ((audioBytes[0] === 0x49 && audioBytes[1] === 0x44 && audioBytes[2] === 0x33) || audioBytes[0] === 0xFF) {
       filename = 'audio.mp3'
       cleanMimeType = 'audio/mpeg'
     }
-    // Fallback: Resolve using input mimeType string
     else {
       const mime = mimeType.toLowerCase()
       if (mime.includes('mpeg') || mime.includes('mp3')) {
@@ -686,7 +650,6 @@ async function transcribeAudio(audioBytes: Uint8Array, mimeType: string, openAiA
     }
   }
 
-  // Create standard Blob with standard MIME type
   const blob = new Blob([audioBytes], { type: cleanMimeType })
   formData.append('file', blob, filename)
   formData.append('model', 'whisper-1')
