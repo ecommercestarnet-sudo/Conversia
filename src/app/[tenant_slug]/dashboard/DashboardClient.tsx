@@ -475,34 +475,32 @@ export default function DashboardClient({ initialConversations, organization }: 
               </div>
             )}
           </div>
-
         </div>
-
       </main>
 
-      {/* Modern, Dark-themed AI Audit Modal */}
+      {/* Modern, Dark-themed AI Audit Modal - Full Screen */}
       {isAuditOpen && activeAnalysis && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-[#0b0e14] border border-slate-800 w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl animate-scale-up">
-            
-            {/* Modal Header */}
-            <div className="flex justify-between items-center border-b border-slate-900 px-6 py-4">
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 bg-indigo-600/10 text-indigo-400 rounded-md border border-indigo-500/20">
-                  <Sparkles className="w-4 h-4 animate-pulse" />
-                </span>
-                <h2 className="text-sm font-bold text-slate-250">Auditoria Comercial da IA</h2>
-              </div>
-              <button 
-                onClick={() => setIsAuditOpen(false)}
-                className="text-slate-450 hover:text-white p-1 hover:bg-slate-900 rounded-lg transition-colors cursor-pointer text-lg font-black"
-              >
-                &times;
-              </button>
+        <div className="fixed inset-0 z-50 flex flex-col bg-[#07090e] animate-fade-in w-screen h-screen">
+          
+          {/* Modal Header */}
+          <div className="flex justify-between items-center border-b border-slate-900 px-6 py-4 bg-slate-950/60 backdrop-blur-md shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-indigo-600/10 text-indigo-400 rounded-md border border-indigo-500/20">
+                <Sparkles className="w-4 h-4 animate-pulse" />
+              </span>
+              <h2 className="text-sm font-bold text-slate-205">Auditoria Comercial da IA</h2>
             </div>
-            
-            {/* Modal Body */}
-            <div className="p-6 space-y-6 overflow-y-auto max-h-[70vh] custom-scrollbar">
+            <button 
+              onClick={() => setIsAuditOpen(false)}
+              className="text-slate-400 hover:text-white p-2 hover:bg-slate-900 rounded-lg transition-colors cursor-pointer text-xl font-bold flex items-center justify-center shrink-0 w-8 h-8"
+            >
+              &times;
+            </button>
+          </div>
+          
+          {/* Modal Body */}
+          <div className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar bg-gradient-to-b from-slate-950/20 to-transparent">
+            <div className="max-w-5xl mx-auto space-y-6">
               
               {/* Score & Resumo Row */}
               <div className="flex flex-col md:flex-row gap-5 items-stretch">
@@ -527,7 +525,7 @@ export default function DashboardClient({ initialConversations, organization }: 
                   <div className="bg-slate-950/40 border border-slate-900 rounded-xl p-3.5">
                     <div className="flex justify-between items-center mb-1.5">
                       <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
-                        <UserCheck className="w-3.5 h-3.5 text-indigo-450" />
+                        <UserCheck className="w-3.5 h-3.5 text-indigo-455" />
                         Empatia
                       </span>
                       <span className="text-xs font-bold text-slate-200">{activeAnalysis.scores.empathy}/100</span>
@@ -569,7 +567,7 @@ export default function DashboardClient({ initialConversations, organization }: 
                   <div className="bg-slate-950/40 border border-slate-900 rounded-xl p-3.5">
                     <div className="flex justify-between items-center mb-1.5">
                       <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
-                        <Zap className="w-3.5 h-3.5 text-rose-450" />
+                        <Zap className="w-3.5 h-3.5 text-rose-455" />
                         Fechamento
                       </span>
                       <span className="text-xs font-bold text-slate-200">{activeAnalysis.scores.closing}/100</span>
@@ -606,14 +604,14 @@ export default function DashboardClient({ initialConversations, organization }: 
                 {/* Weaknesses */}
                 <div className="bg-slate-950/40 border border-slate-900 rounded-xl p-4">
                   <h4 className="text-xs font-bold text-slate-300 mb-3 flex items-center gap-1.5 uppercase tracking-wider">
-                    <ThumbsDown className="w-3.5 h-3.5 text-rose-450" />
+                    <ThumbsDown className="w-3.5 h-3.5 text-rose-455" />
                     Pontos Fracos
                   </h4>
                   {activeAnalysis.weaknesses.length > 0 ? (
                     <ul className="space-y-1.5 text-xs text-slate-300">
                       {activeAnalysis.weaknesses.map((weak, idx) => (
                         <li key={idx} className="flex gap-2 leading-relaxed">
-                          <span className="text-rose-450 font-bold select-none">✗</span>
+                          <span className="text-rose-455 font-bold select-none">✗</span>
                           <span>{weak}</span>
                         </li>
                       ))}
@@ -641,7 +639,7 @@ export default function DashboardClient({ initialConversations, organization }: 
                       ))}
                     </ol>
                   ) : (
-                    <p className="text-[10px] text-slate-550">Nenhuma recomendação prática.</p>
+                    <p className="text-[10px] text-slate-555">Nenhuma recomendação prática.</p>
                   )}
                 </div>
 
@@ -660,22 +658,22 @@ export default function DashboardClient({ initialConversations, organization }: 
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[10px] text-slate-550">Nenhuma objeção comercial detectada.</p>
+                    <p className="text-[10px] text-slate-555">Nenhuma objeção comercial detectada.</p>
                   )}
                 </div>
               </div>
 
             </div>
+          </div>
 
-            {/* Modal Footer */}
-            <div className="border-t border-slate-900 px-6 py-4 flex justify-end">
-              <button 
-                onClick={() => setIsAuditOpen(false)}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 rounded-xl text-xs font-bold cursor-pointer border border-slate-800 transition-colors"
-              >
-                Fechar
-              </button>
-            </div>
+          {/* Modal Footer */}
+          <div className="border-t border-slate-900 px-6 py-4 bg-slate-950/60 backdrop-blur-md flex justify-end shrink-0">
+            <button 
+              onClick={() => setIsAuditOpen(false)}
+              className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-200 rounded-xl text-xs font-bold cursor-pointer border border-slate-800 transition-colors shadow-lg"
+            >
+              Fechar Auditoria
+            </button>
           </div>
         </div>
       )}
