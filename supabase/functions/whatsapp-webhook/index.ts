@@ -480,10 +480,21 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     customPrompt
   })
 
-  const systemPrompt = `Você é um avaliador de vendas. Sua tarefa é analisar o histórico de conversas entre o cliente e o atendente e retornar uma análise estruturada estritamente no formato JSON fornecido abaixo.
- 
-ATENÇÃO: Você DEVE julgar o atendimento ESTRITAMENTE com base no Playbook fornecido. Se uma regra dos "Critérios de Avaliação" não foi cumprida pelo vendedor, você é OBRIGADO a penalizar a nota e citar a regra exata que foi ignorada.
- 
+  const systemPrompt = `Você é um auditor de vendas altamente especializado. Sua tarefa é analisar o histórico de conversas entre o cliente e o atendente e retornar uma análise estruturada estritamente no formato JSON fornecido abaixo.
+
+REGRAS CRÍTICAS DE AUDITORIA (Siga à risca sob pena de falha no sistema):
+
+1. CRUZAMENTO DE DADOS COM A BASE DE CONHECIMENTO:
+Você deve comparar as respostas do atendente com os dados da "Base de conhecimento" fornecida. Se o atendente der qualquer informação conflitante (ex: dizer que a empresa não faz entregas quando a Base de Conhecimento diz que faz, passar preços incorretos, ou conceder descontos maiores que o permitido), você DEVE registrar isso obrigatoriamente como "FALHA GRAVE: [descrição da inconsistência]" dentro da lista "weaknesses" (Pontos Fracos).
+
+2. DIFERENÇA ENTRE DÚVIDAS E OBJEÇÕES:
+Diferencie rigorosamente o que são simples dúvidas de objeções de vendas:
+- Perguntas naturais de interesse do cliente (ex: "Quanto custa?", "Qual o horário?", "Vocês entregam?") são apenas DÚVIDAS e NÃO devem ser listadas em "objections".
+- A lista "objections" só deve conter objeções comerciais em que o cliente demonstra resistência ativa após receber uma oferta (ex: "Achei caro", "O frete tá muito alto", "Demora muito para chegar", "Vou ver com meu marido", "Não tenho tempo"). Se não houver resistência explícita, retorne a lista "objections" vazia.
+
+3. RIGOR NOS CRITÉRIOS DE AVALIAÇÃO:
+As notas (empathy, response_time, investigation, closing) e a nota média geral (overall_score) devem ser calculadas com rigor absoluto, baseando-se estritamente nas regras contidas na seção "Critérios de avaliação" e nas orientações das "Instruções adicionais" abaixo. Seja crítico; se o vendedor ignorar regras descritas nos critérios da organização, você deve obrigatoriamente penalizar a pontuação e descrever a falha em "weaknesses".
+
 O JSON de retorno deve possuir exatamente a seguinte estrutura:
 {
   "overall_score": 85,
@@ -521,10 +532,10 @@ ${knowledgeBase}
 Critérios de avaliação:
 ${evaluationCriteria}
  
-Instruções adicionais:
+Instruções adicionais (Instruções Extras do Cliente):
 ${customPrompt}
  
-Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou qualquer outro texto explicativo fora do JSON.`
+Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais (não use \`\`\`json) ou qualquer outro texto explicativo fora do JSON.`
 
   console.log(`[AI Analyzer] Dispatching completion request to OpenAI API (gpt-4o-mini) via fetch...`)
   let response: Response
