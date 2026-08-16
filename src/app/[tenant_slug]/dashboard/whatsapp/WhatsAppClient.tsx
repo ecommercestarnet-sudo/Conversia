@@ -186,10 +186,8 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 bg-emerald-50 text-emerald-600 border border-emerald-500/20 rounded-md">
-                  <Phone className="w-4 h-4" />
-                </span>
+              <div className="flex items-center gap-2.5">
+                <img src="/Logo.png" alt="SupervisIA Logo" className="w-6 h-6 object-contain" />
                 <h1 className="text-lg font-bold tracking-tight text-slate-900">
                   Conexão de WhatsApp
                 </h1>
