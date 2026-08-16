@@ -41,14 +41,15 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup')
 
-  if (!user && !isAuthRoute && request.nextUrl.pathname !== '/') {
+  // Se o usuário NÃO está logado e NÃO está em uma rota de auth, redirecione para login (incluindo o '/')
+  if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  // Se o usuário está logado e tentando acessar login/signup, redirecione para o tenant dashboard
-  if (user && isAuthRoute) {
+  // Se o usuário está logado e tentando acessar login/signup ou a raiz '/', redirecione para o tenant dashboard
+  if (user && (isAuthRoute || request.nextUrl.pathname === '/')) {
     const { data: userData } = await supabase
       .from('users')
       .select('organizations(slug)')
