@@ -23,8 +23,15 @@ export async function deleteOrganization(id: string) {
       return { success: false, error: 'Acesso negado. Apenas superadmins podem realizar esta ação.' };
     }
 
-    // Delete the organization (dependent rows in users/conversations will cascade delete)
-    const { error } = await supabase
+    // Initialize a service-role supabase client to bypass RLS for this admin action
+    const { createClient: createSupabaseClient } = require('@supabase/supabase-js');
+    const supabaseAdmin = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+    );
+
+    // Delete the organization
+    const { error } = await supabaseAdmin
       .from('organizations')
       .delete()
       .eq('id', id);
