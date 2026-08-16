@@ -1,6 +1,6 @@
 'use server';
 
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
 
 import fs from 'fs';
@@ -10,7 +10,7 @@ let EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
 let EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 
-// Fallback manual parser for .env.local (useful if Next.js hasn't restarted yet to load new envs)
+// Fallback manual parser for .env.local
 if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
   try {
     const envPath = path.resolve(process.cwd(), '.env.local');
@@ -34,7 +34,6 @@ if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
   }
 }
 
-// Fallback para valores padrão do VPS (caso não configurado no Vercel/Ambiente)
 if (!EVOLUTION_API_URL) {
   EVOLUTION_API_URL = 'http://216.238.122.167:8081';
 }
@@ -42,25 +41,22 @@ if (!EVOLUTION_API_KEY) {
   EVOLUTION_API_KEY = '429683C4C977415CAAFCCE10F7D57E11';
 }
 
-console.log('[WhatsApp Server Actions] Evolution API Config loaded:', {
-  url: EVOLUTION_API_URL,
-  key: EVOLUTION_API_KEY ? 'configured' : 'not configured'
-});
-
-export async function getWhatsAppStatus(companyId: string) {
+export async function getWhatsAppStatus(organization_id: string) {
   try {
+    const supabase = await createClient();
+    
     // 1. Get the instance name from the database
-    const { data: company, error: selectError } = await supabase
-      .from('companies')
+    const { data: org, error: selectError } = await supabase
+      .from('organizations')
       .select('evolution_instance_name, whatsapp_status')
-      .eq('id', companyId)
+      .eq('id', organization_id)
       .maybeSingle();
 
-    if (selectError || !company) {
-      return { success: false, error: 'Empresa não encontrada' };
+    if (selectError || !org) {
+      return { success: false, error: 'Organização não encontrada' };
     }
 
-    const instanceName = company.evolution_instance_name;
+    const instanceName = org.evolution_instance_name;
 
     if (!instanceName) {
       return { success: true, status: 'disconnected', instanceName: null };
@@ -79,10 +75,10 @@ export async function getWhatsAppStatus(companyId: string) {
       // If it doesn't exist on Evolution, update DB and return disconnected
       if (resp.status === 404) {
         await supabase
-          .from('companies')
+          .from('organizations')
           .update({ evolution_instance_name: null, whatsapp_status: 'disconnected' })
-          .eq('id', companyId);
-        revalidatePath('/dashboard/whatsapp');
+          .eq('id', organization_id);
+        revalidatePath('/[tenant_slug]/dashboard/whatsapp', 'page');
         return { success: true, status: 'disconnected', instanceName: null };
       }
       return { success: false, error: `Erro na Evolution API: ${resp.statusText}` };
@@ -93,13 +89,12 @@ export async function getWhatsAppStatus(companyId: string) {
     const status = state === 'open' ? 'connected' : 'disconnected';
 
     // 3. Update database if the status has changed
-    if (status !== company.whatsapp_status) {
+    if (status !== org.whatsapp_status) {
       await supabase
-        .from('companies')
+        .from('organizations')
         .update({ whatsapp_status: status })
-        .eq('id', companyId);
-      revalidatePath('/dashboard/whatsapp');
-      revalidatePath('/dashboard');
+        .eq('id', organization_id);
+      revalidatePath('/[tenant_slug]/dashboard/whatsapp', 'page');
     }
 
     // 4. Fetch connected phone number if state is open
@@ -136,34 +131,33 @@ export async function getWhatsAppStatus(companyId: string) {
   }
 }
 
-export async function connectWhatsApp(companyId: string) {
+export async function connectWhatsApp(organization_id: string) {
   try {
-    // 1. Call the Supabase Edge Function to handle Evolution API create/connect and webhook configuration
+    const supabase = await createClient();
+    // Use session token or pass it securely to Edge Function. But we will just pass the organizationId.
+    const { data: { session } } = await supabase.auth.getSession();
+    
     const edgeFunctionUrl = `${SUPABASE_URL?.replace(/\/$/, '')}/functions/v1/evolution-manager`;
-    console.log(`[Next.js Server Action] Calling Edge Function: ${edgeFunctionUrl} for companyId: ${companyId}`);
     
     const resp = await fetch(edgeFunctionUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token || process.env.SUPABASE_ANON_KEY}`
       },
       body: JSON.stringify({
         action: 'connect',
-        companyId
+        organizationId: organization_id
       })
     });
 
-    console.log(`[Next.js Server Action] Edge Function response status: ${resp.status}`);
-
     if (!resp.ok) {
       const errText = await resp.text();
-      console.error(`[Next.js Server Action] Edge Function returned error: ${errText}`);
       return { success: false, error: `Edge Function error: ${errText}` };
     }
 
     const data = await resp.json();
-    console.log(`[Next.js Server Action] Edge Function response data:`, JSON.stringify(data));
-    revalidatePath('/dashboard/whatsapp');
+    revalidatePath('/[tenant_slug]/dashboard/whatsapp', 'page');
     return { success: true, ...data };
   } catch (error: any) {
     console.error('Error in connectWhatsApp:', error);
@@ -171,30 +165,33 @@ export async function connectWhatsApp(companyId: string) {
   }
 }
 
-export async function disconnectWhatsApp(companyId: string) {
+export async function disconnectWhatsApp(organization_id: string) {
   try {
-    const { data: company, error: selectError } = await supabase
-      .from('companies')
+    const supabase = await createClient();
+    const { data: org, error: selectError } = await supabase
+      .from('organizations')
       .select('evolution_instance_name')
-      .eq('id', companyId)
+      .eq('id', organization_id)
       .maybeSingle();
 
-    if (selectError || !company || !company.evolution_instance_name) {
-      return { success: false, error: 'Instância não configurada para esta empresa' };
+    if (selectError || !org || !org.evolution_instance_name) {
+      return { success: false, error: 'Instância não configurada para esta organização' };
     }
 
-    const instanceName = company.evolution_instance_name;
+    const instanceName = org.evolution_instance_name;
 
-    // Call Supabase Edge Function to delete the instance and update database
+    const { data: { session } } = await supabase.auth.getSession();
+    
     const edgeFunctionUrl = `${SUPABASE_URL?.replace(/\/$/, '')}/functions/v1/evolution-manager`;
     const resp = await fetch(edgeFunctionUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token || process.env.SUPABASE_ANON_KEY}`
       },
       body: JSON.stringify({
         action: 'disconnect',
-        companyId,
+        organizationId: organization_id,
         instanceName
       })
     });
@@ -204,8 +201,7 @@ export async function disconnectWhatsApp(companyId: string) {
       return { success: false, error: `Edge Function error: ${errText}` };
     }
 
-    revalidatePath('/dashboard/whatsapp');
-    revalidatePath('/dashboard');
+    revalidatePath('/[tenant_slug]/dashboard/whatsapp', 'page');
     return { success: true };
   } catch (error: any) {
     console.error('Error in disconnectWhatsApp:', error);

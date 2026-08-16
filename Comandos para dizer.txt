@@ -1,0 +1,16 @@
+Inicie o servidor de desenvolvimento para mim
+
+
+Abre a pasta do sistema:
+C:\Users\Ailton\Downloads\LICITAPLUS
+
+E digita CMD na barra de endereço.
+
+
+Digita:
+npm run dev
+
+Digita:
+git push
+
+git push origin main

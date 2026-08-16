@@ -13,10 +13,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { action, companyId, instanceName } = await req.json()
+    const { action, organizationId, instanceName } = await req.json()
 
-    if (!companyId || (!instanceName && action !== 'connect')) {
-      return new Response(JSON.stringify({ error: 'companyId is required, and instanceName is required for disconnect' }), {
+    if (!organizationId || (!instanceName && action !== 'connect')) {
+      return new Response(JSON.stringify({ error: 'organizationId is required, and instanceName is required for disconnect' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400
       })
@@ -50,11 +50,11 @@ Deno.serve(async (req) => {
         console.warn(`[Evolution Manager] Evolution delete instance returned status ${deleteResp.status}: ${errText}`)
       }
 
-      // Update companies table
+      // Update organizations table
       await supabase
-        .from('companies')
+        .from('organizations')
         .update({ evolution_instance_name: null, whatsapp_status: 'disconnected' })
-        .eq('id', companyId)
+        .eq('id', organizationId)
 
       return new Response(JSON.stringify({ success: true, message: 'Instance disconnected and deleted' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -63,20 +63,20 @@ Deno.serve(async (req) => {
     }
 
     // Action: CONNECT (Get or Create Instance and return QR Code)
-    console.log(`[Evolution Manager] Connecting instance for company: ${companyId}`)
+    console.log(`[Evolution Manager] Connecting instance for organization: ${organizationId}`)
 
     // 1. Fetch current instance name from DB if it exists
-    const { data: company, error: selectError } = await supabase
-      .from('companies')
+    const { data: org, error: selectError } = await supabase
+      .from('organizations')
       .select('evolution_instance_name')
-      .eq('id', companyId)
+      .eq('id', organizationId)
       .maybeSingle()
 
     if (selectError) {
-      throw new Error(`Failed to fetch company from DB: ${selectError.message}`)
+      throw new Error(`Failed to fetch organization from DB: ${selectError.message}`)
     }
 
-    const oldInstanceName = company?.evolution_instance_name
+    const oldInstanceName = org?.evolution_instance_name
 
     // 2. If an old instance name exists, delete it from Evolution API to prevent session recycling
     if (oldInstanceName) {
@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
     }
 
     // 3. Generate a brand new unique instance name (alphanumeric, short like "atendimento" to avoid DB limitations)
-    const newInstanceName = `c${companyId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10)}`
+    const newInstanceName = `o${organizationId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10)}`
     console.log(`[Evolution Manager] Generated short instance name: ${newInstanceName}`)
 
     // 4. Create the new instance on Evolution API
@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
       console.log(`[Evolution Manager] Webhook configured successfully for ${newInstanceName}. Response: ${respText}`)
     }
 
-    // 5. Configure settings for this new instance (alwaysOnline & readMessages)
+    // 6. Configure settings for this new instance
     console.log(`[Evolution Manager] Configuring settings for ${newInstanceName} to enable alwaysOnline...`)
     const settingsSetUrl = `${apiUrl.replace(/\/$/, '')}/settings/set/${newInstanceName}`
     const settingsResp = await fetch(settingsSetUrl, {
@@ -188,15 +188,15 @@ Deno.serve(async (req) => {
       console.log(`[Evolution Manager] Settings configured successfully for ${newInstanceName}`)
     }
 
-    // 7. Save the new instance name to the DB (companies table)
-    console.log(`[Evolution Manager] Saving new instance ${newInstanceName} to companies table...`)
+    // 7. Save the new instance name to the DB (organizations table)
+    console.log(`[Evolution Manager] Saving new instance ${newInstanceName} to organizations table...`)
     const { error: updateError } = await supabase
-      .from('companies')
+      .from('organizations')
       .update({ 
         evolution_instance_name: newInstanceName, 
         whatsapp_status: 'disconnected' 
       })
-      .eq('id', companyId)
+      .eq('id', organizationId)
 
     if (updateError) {
       console.error(`[Evolution Manager] Failed to update DB with new instance name: ${updateError.message}`)
