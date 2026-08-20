@@ -47,11 +47,12 @@ export async function POST(request: NextRequest) {
 
     let conversationId: string | number | null = null;
 
-    // 3. Search or create conversation in conversations table
+    // 3. Search or create conversation in conversations table, filtering by phone and ensuring organization_id is null
     const { data: existingConv, error: selectError } = await supabase
       .from('conversations')
       .select('id')
       .eq('client_phone', clientPhone)
+      .is('organization_id', null)
       .maybeSingle();
 
     if (selectError) {
@@ -74,6 +75,7 @@ export async function POST(request: NextRequest) {
           .from('conversations')
           .select('id')
           .eq('client_phone', clientPhone)
+          .is('organization_id', null)
           .maybeSingle();
 
         if (retryError || !retryConv) {

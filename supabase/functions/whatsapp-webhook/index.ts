@@ -256,12 +256,19 @@ Deno.serve(async (req) => {
 
     let conversationId: string | number | null = null
 
-    // Search or create conversation in conversations table
-    const { data: existingConv, error: selectError } = await supabase
+    // Search or create conversation in conversations table, filtering by both phone and organization
+    const selectQuery = supabase
       .from('conversations')
       .select('id, organization_id')
       .eq('client_phone', clientPhone)
-      .maybeSingle()
+
+    if (orgId) {
+      selectQuery.eq('organization_id', orgId)
+    } else {
+      selectQuery.is('organization_id', null)
+    }
+
+    const { data: existingConv, error: selectError } = await selectQuery.maybeSingle()
 
     if (selectError) {
       console.error('Error selecting conversation from database:', selectError)
@@ -292,11 +299,18 @@ Deno.serve(async (req) => {
       if (insertError) {
         console.error('Error inserting new conversation into database:', insertError)
         
-        const { data: retryConv, error: retryError } = await supabase
+        const retryQuery = supabase
           .from('conversations')
           .select('id, organization_id')
           .eq('client_phone', clientPhone)
-          .maybeSingle()
+
+        if (orgId) {
+          retryQuery.eq('organization_id', orgId)
+        } else {
+          retryQuery.is('organization_id', null)
+        }
+
+        const { data: retryConv, error: retryError } = await retryQuery.maybeSingle()
 
         if (retryError) {
           console.error('Error retrying conversation selection after insert failure:', retryError)
