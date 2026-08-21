@@ -457,45 +457,11 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     }
 
     const lastMessage = messages[messages.length - 1];
-    const lastMessageTime = new Date(lastMessage.created_at).getTime();
-    const now = Date.now();
-    const inactivityThreshold = 15 * 60 * 1000; // 15 minutes in ms
-
     const isSeller = lastMessage.sender_type === 'agent' || lastMessage.sender_type === 'atendente';
-    const isInactive = (now - lastMessageTime) >= inactivityThreshold;
 
-    if (!isSeller && !isInactive) {
-      const delay = inactivityThreshold - (now - lastMessageTime);
-      console.log(`[AI Analyzer] Client message received. Scheduling deferred analysis in ${delay / 1000}s for conversation ${conversationId}.`);
-
-      setTimeout(async () => {
-        try {
-          console.log(`[AI Analyzer] Running scheduled check for conversation ${conversationId}...`);
-          const { data: latestMsgs } = await supabase
-            .from('messages')
-            .select('id, sender_type, created_at')
-            .eq('conversation_id', conversationId)
-            .order('created_at', { ascending: true });
-
-          if (latestMsgs && latestMsgs.length >= 3) {
-            const currentLast = latestMsgs[latestMsgs.length - 1];
-            const currentLastTime = new Date(currentLast.created_at).getTime();
-            const currentIsSeller = currentLast.sender_type === 'agent' || currentLast.sender_type === 'atendente';
-            const currentIsInactive = (Date.now() - currentLastTime) >= inactivityThreshold;
-
-            if (currentIsSeller || currentIsInactive) {
-              console.log(`[AI Analyzer] Inactivity check passed. Triggering deferred analysis for conversation ${conversationId}.`);
-              await analyzeConversation(supabase, conversationId, true);
-            } else {
-              console.log(`[AI Analyzer] Conversation ${conversationId} had new activity. Postponing analysis.`);
-            }
-          }
-        } catch (err) {
-          console.error(`[AI Analyzer] Error in scheduled analysis for conversation ${conversationId}:`, err);
-        }
-      }, delay);
-
-      return;
+    if (!isSeller) {
+      console.log(`[AI Analyzer] Last message in conversation ${conversationId} is from client. Skipping analysis until seller responds.`)
+      return
     }
   }
 
@@ -630,9 +596,15 @@ Para cada critério comercial individual (mínimo de 5 itens baseados nas diretr
    - "N_A": O cenário para essa regra NÃO aconteceu na conversa (ex: o cliente não fez nenhuma pergunta sobre preço, não apresentou objeção, ou o contato está no início).
 
 ---
-REGRA RÍGIDA PARA N_A (NÃO APLICÁVEL):
-- Você NUNCA deve marcar "NAO_CUMPRIDO" para "Quebra de Objeções" se o cliente não fez nenhuma objeção explícita. Nesses casos, o status DEVE ser obrigatoriamente "N_A".
+REGRA RÍGIDA PARA N_A (NÃO APLICÁVEL) E DETECÇÃO DE OBJEÇÕES:
+- Detecção Real de Objeções: Se o cliente disser "está caro" ou frases equivalentes demonstrando resistência à compra, você DEVE identificar isso formalmente como uma objeção no resumo ("summary") e listá-la no array "objections".
+- Quebra de Objeções pendente: Se o cliente expressou uma objeção mas o vendedor ainda NÃO respondeu a ela (ou seja, a objeção é recente ou a última mensagem da conversa), você DEVE marcar o critério "Quebra de Objeções" (ou correspondente) como "N_A" até que haja uma nova resposta do atendente para ser avaliada. Não puna o atendente por uma objeção que ele ainda não teve a oportunidade de responder.
+- Sem Objeções: Você NUNCA deve marcar "NAO_CUMPRIDO" para "Quebra de Objeções" se o cliente não fez nenhuma objeção explícita. Nesses casos, o status DEVE ser "N_A".
 - Se um critério for classificado como "N_A", ele não entra no cálculo da nota (ele deve ser desconsiderado tanto dos pontos obtidos quanto dos pontos máximos aplicáveis).
+
+---
+AJUSTE DE SENSIBILIDADE (EMPATIA E TOM):
+- No critério de "Empatia" (ou correspondente), remova cobranças irrelevantes ou poéticas (como exigir que o atendente parabenize/elogie a busca do cliente por saúde). Se o atendente cumprimentou com educação e usou o nome do cliente na primeira interação, o critério Empatia DEVE ser marcado como "CUMPRIDO" (1.0 pt).
 
 ---
 CÁLCULO DA NOTA FINAL COMERCIAL:
