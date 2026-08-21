@@ -422,7 +422,12 @@ Deno.serve(async (req) => {
     console.error('Error processing Evolution webhook:', err)
     return new Response(JSON.stringify({ success: false, error: err.message || 'Internal Server Error' }), {
       headers: { 'Content-Type': 'application/json' },
-    async function analyzeConversation(supabase: ReturnType<typeof createClient>, conversationId: string, force: boolean = false) {
+      status: 500
+    })
+  }
+})
+
+async function analyzeConversation(supabase: ReturnType<typeof createClient>, conversationId: string, force: boolean = false) {
   console.log(`[AI Analyzer] Starting AI analysis for conversation ID: ${conversationId} (force=${force})`)
 
   const { data: messages, error: selectError } = await supabase
