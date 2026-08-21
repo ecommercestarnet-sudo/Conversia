@@ -20,10 +20,12 @@ import {
   Target,
   BookOpen,
   LogOut,
-  ExternalLink
+  ExternalLink,
+  Users
 } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { logout } from '@/app/auth-actions';
+import { assignOperatorToConversation } from './team/actions';
 
 interface Analysis {
   id: string | number;
@@ -52,9 +54,17 @@ interface Message {
 interface Conversation {
   id: string | number;
   client_phone: string;
+  operator_id?: string | null;
   created_at: string;
   analyses?: Analysis[] | Analysis | null;
   messages?: Message[];
+}
+
+interface Operator {
+  id: string;
+  name: string;
+  role: string | null;
+  work_hours: string | null;
 }
 
 interface Organization {
@@ -67,19 +77,22 @@ interface DashboardClientProps {
   initialConversations: Conversation[];
   organization: Organization;
   lastStatusLog?: { status: string; created_at: string } | null;
+  operators: Operator[];
 }
 
-export default function DashboardClient({ initialConversations, organization, lastStatusLog }: DashboardClientProps) {
+export default function DashboardClient({ initialConversations, organization, lastStatusLog, operators }: DashboardClientProps) {
   const router = useRouter();
   const params = useParams();
   const tenantSlug = params.tenant_slug as string;
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [operatorFilter, setOperatorFilter] = useState<string>('all');
   const [selectedId, setSelectedId] = useState<string | number | null>(
     initialConversations.length > 0 ? initialConversations[0].id : null
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [isAssigning, setIsAssigning] = useState(false);
 
   const handleSignOut = async () => {
     await logout();
@@ -140,13 +153,17 @@ export default function DashboardClient({ initialConversations, organization, la
     };
   }, [initialConversations]);
 
-  // Filter conversations based on search term
+  // Filter conversations based on search term and operator filter
   const filteredConversations = useMemo(() => {
     return initialConversations.filter(conv => {
       const phone = conv.client_phone || '';
-      return phone.includes(searchTerm.replace(/[^0-9]/g, '')) || phone.includes(searchTerm);
+      const matchesSearch = phone.includes(searchTerm.replace(/[^0-9]/g, '')) || phone.includes(searchTerm);
+      const matchesOperator = operatorFilter === 'all' || 
+        (operatorFilter === 'unassigned' && !conv.operator_id) || 
+        conv.operator_id === operatorFilter;
+      return matchesSearch && matchesOperator;
     });
-  }, [initialConversations, searchTerm]);
+  }, [initialConversations, searchTerm, operatorFilter]);
 
   // Resolve active selection
   const selectedConversation = useMemo(() => {
@@ -251,6 +268,14 @@ export default function DashboardClient({ initialConversations, organization, la
             </button>
 
             <button
+              onClick={() => router.push(`/${tenantSlug}/dashboard/team`)}
+              className="px-4 py-2 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 transition-all flex items-center gap-2 cursor-pointer shrink-0 shadow-sm"
+            >
+              <Users className="w-4 h-4 text-slate-500" />
+              <span>Equipe</span>
+            </button>
+
+            <button
               onClick={() => router.push(`/${tenantSlug}/dashboard/whatsapp`)}
               className="px-4 py-2 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 transition-all flex items-center gap-2 cursor-pointer shrink-0 shadow-sm"
             >
@@ -340,9 +365,29 @@ export default function DashboardClient({ initialConversations, organization, la
           
           {/* Left Column: Conversas List */}
           <div className="lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-4 flex flex-col h-[calc(100vh-230px)] shadow-sm">
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 px-1 shrink-0">
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 px-1 shrink-0">
               Lista de Atendimentos ({filteredConversations.length})
             </h2>
+
+            {/* Operator Filter Dropdown */}
+            <div className="mb-4 shrink-0 px-1">
+              <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                Filtrar por Atendente
+              </label>
+              <select
+                value={operatorFilter}
+                onChange={(e) => setOperatorFilter(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors shadow-sm"
+              >
+                <option value="all">Todos os atendentes</option>
+                <option value="unassigned">Sem atendente atribuído</option>
+                {operators.map((op) => (
+                  <option key={op.id} value={op.id}>
+                    {op.name} {op.role ? `(${op.role})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             {filteredConversations.length === 0 ? (
               <div className="text-center py-12 border border-dashed border-slate-200 rounded-xl bg-slate-50 flex-1 flex flex-col justify-center items-center">
@@ -357,6 +402,7 @@ export default function DashboardClient({ initialConversations, organization, la
                   const latestMsg = conv.messages && conv.messages.length > 0 
                     ? conv.messages[conv.messages.length - 1].content 
                     : 'Sem histórico de mensagens';
+                  const assignedOperator = operators.find(op => op.id === conv.operator_id);
 
                   return (
                     <div
@@ -397,6 +443,13 @@ export default function DashboardClient({ initialConversations, organization, la
                           <span>{conv.messages.length} msgs</span>
                         )}
                       </div>
+
+                      {assignedOperator && (
+                        <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center gap-1 text-[9px] text-slate-500 font-semibold">
+                          <Users className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                          <span className="truncate">Atendente: {assignedOperator.name}</span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -425,15 +478,47 @@ export default function DashboardClient({ initialConversations, organization, la
                     </div>
                   </div>
                   
-                  {activeAnalysis && (
-                    <button
-                      onClick={() => setIsAuditOpen(true)}
-                      className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100/80 text-emerald-600 border border-emerald-500/20 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm shrink-0"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Ver Auditoria Comercial</span>
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
+                        Atendente:
+                      </span>
+                      <select
+                        disabled={isAssigning}
+                        value={selectedConversation.operator_id || ''}
+                        onChange={async (e) => {
+                          const opId = e.target.value === '' ? null : e.target.value;
+                          setIsAssigning(true);
+                          const res = await assignOperatorToConversation(selectedConversation.id, opId);
+                          setIsAssigning(false);
+                          if (res.success) {
+                            selectedConversation.operator_id = opId || undefined;
+                            router.refresh();
+                          } else {
+                            alert('Erro ao atribuir atendente: ' + res.error);
+                          }
+                        }}
+                        className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
+                      >
+                        <option value="">Não atribuído</option>
+                        {operators.map((op) => (
+                          <option key={op.id} value={op.id}>
+                            {op.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {activeAnalysis && (
+                      <button
+                        onClick={() => setIsAuditOpen(true)}
+                        className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100/80 text-emerald-600 border border-emerald-500/20 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm shrink-0"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Ver Auditoria Comercial</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Messages Timeline (WhatsApp style layout) */}

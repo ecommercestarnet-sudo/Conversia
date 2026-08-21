@@ -32,6 +32,7 @@ export default async function DashboardPage({ params }: PageProps) {
     .select(`
       id,
       client_phone,
+      operator_id,
       created_at,
       analyses (
         id,
@@ -58,6 +59,17 @@ export default async function DashboardPage({ params }: PageProps) {
     console.error('Error fetching conversations for dashboard:', error);
   }
 
+  // Fetch operators associated with this organization
+  const { data: operators, error: operatorsError } = await supabase
+    .from('operators')
+    .select('id, name, role, work_hours')
+    .eq('company_id', org.id)
+    .order('name');
+
+  if (operatorsError) {
+    console.error('Error fetching operators for dashboard:', operatorsError);
+  }
+
   // 3. Fetch the last whatsapp status log to see if it is disconnected ('close')
   const { data: lastStatusLog } = await supabase
     .from('whatsapp_status_logs')
@@ -72,6 +84,7 @@ export default async function DashboardPage({ params }: PageProps) {
       initialConversations={conversations || []} 
       organization={org} 
       lastStatusLog={lastStatusLog}
+      operators={operators || []}
     />
   );
 }
