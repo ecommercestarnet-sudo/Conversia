@@ -10,25 +10,61 @@ Deno.serve(async (req) => {
       const connData = reqBody.data || {}
       const state = connData.state || connData.instance?.state || ''
       const statusReason = connData.statusReason ?? connData.disconnectionReasonCode ?? null
+      const instanceName = reqBody.instance || ''
 
-      console.log(`[CONNECTION_UPDATE] state="${state}" statusReason=${statusReason} instance=${reqBody.instance}`)
+      console.log(`[CONNECTION_UPDATE] state="${state}" statusReason=${statusReason} instance=${instanceName}`)
 
-      if (state === 'close' || statusReason === 401) {
+      if (instanceName) {
         const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
         const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
         const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
-        const instanceName = reqBody.instance || ''
 
-        if (instanceName) {
-          const { error } = await supabase
-            .from('organizations')
-            .update({ whatsapp_status: 'disconnected' })
-            .eq('evolution_instance_name', instanceName)
-          if (error) {
-            console.error('[CONNECTION_UPDATE] Failed to update organization status:', error.message)
+        // 1. Fetch organization
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .select('id, whatsapp_status')
+          .eq('evolution_instance_name', instanceName)
+          .maybeSingle()
+
+        if (orgError) {
+          console.error('[CONNECTION_UPDATE] Error fetching organization:', orgError.message)
+        } else if (org) {
+          const isConnected = state === 'open'
+          const newDbStatus = isConnected ? 'connected' : 'disconnected'
+          const newLogStatus = isConnected ? 'open' : 'close'
+
+          // 2. Check if status changed
+          if (org.whatsapp_status !== newDbStatus) {
+            console.log(`[CONNECTION_UPDATE] Status changed for organization ${org.id} from ${org.whatsapp_status} to ${newDbStatus}`)
+
+            // Update organization
+            const { error: updateError } = await supabase
+              .from('organizations')
+              .update({ whatsapp_status: newDbStatus })
+              .eq('id', org.id)
+
+            if (updateError) {
+              console.error('[CONNECTION_UPDATE] Failed to update organization status:', updateError.message)
+            }
+
+            // Insert connection status log
+            const { error: logError } = await supabase
+              .from('whatsapp_status_logs')
+              .insert({
+                company_id: org.id,
+                status: newLogStatus,
+                reason: statusReason ? String(statusReason) : null,
+                created_at: new Date().toISOString()
+              })
+
+            if (logError) {
+              console.error('[CONNECTION_UPDATE] Failed to insert status log:', logError.message)
+            }
           } else {
-            console.log(`[CONNECTION_UPDATE] Marked instance "${instanceName}" as disconnected in DB.`)
+            console.log(`[CONNECTION_UPDATE] Status for organization ${org.id} is already ${newDbStatus}. No change logged.`)
           }
+        } else {
+          console.warn(`[CONNECTION_UPDATE] Organization not found for instance: ${instanceName}`)
         }
       }
 

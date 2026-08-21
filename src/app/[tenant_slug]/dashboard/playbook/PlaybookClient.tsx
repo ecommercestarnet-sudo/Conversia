@@ -35,14 +35,24 @@ interface Playbook {
 interface PlaybookClientProps {
   company: Company | null;
   initialPlaybook: Playbook | null;
+  lastStatusLog?: { status: string; created_at: string } | null;
 }
 
 type TabType = 'context' | 'knowledge' | 'criteria' | 'prompt';
 
-export default function PlaybookClient({ company, initialPlaybook }: PlaybookClientProps) {
+export default function PlaybookClient({ company, initialPlaybook, lastStatusLog }: PlaybookClientProps) {
   const router = useRouter();
   const params = useParams();
   const tenantSlug = params.tenant_slug as string;
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit'
+    });
+  };
 
   const handleSignOut = async () => {
     await logout();
@@ -110,6 +120,26 @@ export default function PlaybookClient({ company, initialPlaybook }: PlaybookCli
 
   return (
     <div className="relative min-h-screen bg-slate-50 text-slate-800 font-sans antialiased">
+      {lastStatusLog?.status === 'close' && (
+        <div className="bg-red-655 bg-red-600 text-white px-6 py-3 relative z-20 shadow-md">
+          <div className="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-3">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-white shrink-0 animate-pulse" />
+              <span className="text-sm font-medium">
+                <strong>Atenção:</strong> A integração com o WhatsApp está offline desde{' '}
+                <span className="font-bold underline">{formatDate(lastStatusLog.created_at)}</span>. 
+                As mensagens enviadas ou recebidas durante este período não estão sendo monitoradas.
+              </span>
+            </div>
+            <button
+              onClick={() => router.push(`/${tenantSlug}/dashboard/whatsapp`)}
+              className="px-3 py-1.5 bg-white text-red-655 text-red-600 hover:bg-red-50 text-xs font-bold rounded-lg transition-all cursor-pointer shadow-sm shrink-0"
+            >
+              Reconectar WhatsApp
+            </button>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-md sticky top-0 z-10 px-6 py-4 shadow-sm">
         <div className="max-w-4xl mx-auto flex justify-between items-center">

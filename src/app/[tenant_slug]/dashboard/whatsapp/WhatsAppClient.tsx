@@ -8,6 +8,7 @@ import {
   CheckCircle2, 
   XCircle, 
   AlertCircle, 
+  AlertTriangle,
   Trash2, 
   Loader2,
   Phone,
@@ -26,9 +27,10 @@ interface Company {
 
 interface WhatsAppClientProps {
   company: Company | null;
+  lastStatusLog?: { status: string; created_at: string } | null;
 }
 
-export default function WhatsAppClient({ company }: WhatsAppClientProps) {
+export default function WhatsAppClient({ company, lastStatusLog }: WhatsAppClientProps) {
   const router = useRouter();
   const params = useParams();
   const tenantSlug = params.tenant_slug as string;
@@ -174,6 +176,27 @@ export default function WhatsAppClient({ company }: WhatsAppClientProps) {
 
   return (
     <div className="relative min-h-screen bg-slate-50 text-slate-800 font-sans antialiased">
+      {lastStatusLog?.status === 'close' && (
+        <div className="bg-red-655 bg-red-600 text-white px-6 py-3 relative z-20 shadow-md">
+          <div className="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-3">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-white shrink-0 animate-pulse" />
+              <span className="text-sm font-medium">
+                <strong>Atenção:</strong> A integração com o WhatsApp está offline desde{' '}
+                <span className="font-bold underline">
+                  {new Date(lastStatusLog.created_at).toLocaleString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    day: '2-digit',
+                    month: '2-digit'
+                  })}
+                </span>
+                . As mensagens enviadas ou recebidas durante este período não estão sendo monitoradas.
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-md sticky top-0 z-10 px-6 py-4 shadow-sm">
         <div className="max-w-4xl mx-auto flex justify-between items-center">

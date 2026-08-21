@@ -26,8 +26,17 @@ export default async function WhatsAppPage({ params }: PageProps) {
     redirect('/login');
   }
 
-  // 2. Render client component, mapping org to company for compatibility
+  // 2. Fetch the last whatsapp status log to see if it is disconnected ('close')
+  const { data: lastStatusLog } = await supabase
+    .from('whatsapp_status_logs')
+    .select('status, created_at')
+    .eq('company_id', org.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // 3. Render client component, mapping org to company for compatibility
   return (
-    <WhatsAppClient company={org} />
+    <WhatsAppClient company={org} lastStatusLog={lastStatusLog} />
   );
 }

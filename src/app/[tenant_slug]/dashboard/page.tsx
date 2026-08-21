@@ -58,7 +58,20 @@ export default async function DashboardPage({ params }: PageProps) {
     console.error('Error fetching conversations for dashboard:', error);
   }
 
+  // 3. Fetch the last whatsapp status log to see if it is disconnected ('close')
+  const { data: lastStatusLog } = await supabase
+    .from('whatsapp_status_logs')
+    .select('status, created_at')
+    .eq('company_id', org.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   return (
-    <DashboardClient initialConversations={conversations || []} organization={org} />
+    <DashboardClient 
+      initialConversations={conversations || []} 
+      organization={org} 
+      lastStatusLog={lastStatusLog}
+    />
   );
 }
