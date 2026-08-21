@@ -120,299 +120,312 @@ Deno.serve(async (req) => {
       })
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
-    const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    
-    if (!supabaseServiceRoleKey) {
-      console.error('CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not defined in the environment!')
-    }
-    
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
-
-    // 1. Fetch the organization ID that matches the evolution_instance_name from the payload
-    const instanceName = reqBody.instance || reqBody.instanceName || ''
-    let orgId: string | null = null
-
-    if (instanceName) {
-      const { data: orgData, error: orgError } = await supabase
-        .from('organizations')
-        .select('id')
-        .eq('evolution_instance_name', instanceName)
-        .maybeSingle()
-
-      if (orgError) {
-        console.error(`Error fetching organization by instance name "${instanceName}":`, orgError)
-      } else if (orgData) {
-        orgId = orgData.id
-        console.log(`Associated organization ID: ${orgId} for instance: ${instanceName}`)
-      }
-    }
-
-    if (!orgId) {
-      console.warn(`[whatsapp-webhook] Organization not found for instance "${instanceName}". Falling back to first organization.`)
-      const { data: orgs, error: orgError } = await supabase
-        .from('organizations')
-        .select('id')
-        .limit(1)
-
-      if (orgError) {
-        console.error('Error fetching organization fallback from database:', orgError)
-      } else if (orgs && orgs.length > 0) {
-        orgId = orgs[0].id
-        console.log(`Associated fallback organization ID: ${orgId}`)
-      } else {
-        console.warn('No organizations found in database.')
-      }
-    }
-
-    let content = ''
-    const rawMessage = data.message
-    const message = rawMessage || {}
-    const isAudio = !!(message.audioMessage || data.messageType === 'audioMessage')
-
-    if (isAudio) {
+    // Process the message asynchronously to avoid webhook timeouts and duplicate retries
+    const processWebhookAsync = async () => {
       try {
-        console.log('Áudio detectado. Iniciando recuperação do áudio...')
-        let audioBytes: Uint8Array | null = null
-        let mimeType = 'audio/ogg'
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+        const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        
+        if (!supabaseServiceRoleKey) {
+          console.error('CRITICAL: SUPABASE_SERVICE_ROLE_KEY is not defined in the environment!')
+        }
+        
+        const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
 
-        console.log('Tentando baixar áudio via URL/Base64...')
+        // 1. Fetch the organization ID that matches the evolution_instance_name from the payload
+        const instanceName = reqBody.instance || reqBody.instanceName || ''
+        let orgId: string | null = null
 
-        const audioMessage = message.audioMessage || {}
-        const base64Str = audioMessage.base64 || audioMessage.audio
-        const isUrl = (str: string) => typeof str === 'string' && (str.startsWith('http://') || str.startsWith('https://'))
-        const isEncryptedUrl = (str: string) => typeof str === 'string' && str.includes('whatsapp.net')
+        if (instanceName) {
+          const { data: orgData, error: orgError } = await supabase
+            .from('organizations')
+            .select('id')
+            .eq('evolution_instance_name', instanceName)
+            .maybeSingle()
 
-        if (base64Str && !isUrl(base64Str)) {
-          console.log('Áudio em base64 direto encontrado no payload. Decodificando...')
-          audioBytes = base64ToBytes(base64Str)
-          if (audioMessage.mimetype) mimeType = audioMessage.mimetype
-          console.log(`Áudio decodificado com sucesso. Tamanho: ${audioBytes.length} bytes.`)
-        } else {
-          const urlStr = audioMessage.url || audioMessage.mediaUrl || (isUrl(audioMessage.audio) ? audioMessage.audio : null)
-          if (urlStr && isEncryptedUrl(urlStr)) {
-            console.log(`URL do áudio no payload é da CDN do WhatsApp (${urlStr}) e está criptografada. Pulando download direto para buscar via Evolution API decriptografada.`)
-          }
-          
-          if (urlStr && !isEncryptedUrl(urlStr)) {
-            console.log(`URL do áudio encontrada no payload: ${urlStr}. Baixando...`)
-            const downloadResp = await fetch(urlStr)
-            if (!downloadResp.ok) {
-              throw new Error(`Failed to download audio from payload URL: ${downloadResp.statusText}`)
-            }
-            const arrayBuffer = await downloadResp.arrayBuffer()
-            audioBytes = new Uint8Array(arrayBuffer)
-            if (audioMessage.mimetype) mimeType = audioMessage.mimetype
-            console.log(`Áudio baixado com sucesso da URL direta. Tamanho: ${audioBytes.length} bytes.`)
+          if (orgError) {
+            console.error(`Error fetching organization by instance name "${instanceName}":`, orgError)
+          } else if (orgData) {
+            orgId = orgData.id
+            console.log(`Associated organization ID: ${orgId} for instance: ${instanceName}`)
           }
         }
 
-        if (!audioBytes) {
-          console.log('Áudio não encontrado no payload. Buscando na Evolution API...')
-          const messageId = key.id
-          
-          let dbInstanceName = null
-          if (orgId) {
-            const { data: orgData } = await supabase.from('organizations').select('evolution_instance_name').eq('id', orgId).maybeSingle()
-            if (orgData) dbInstanceName = orgData.evolution_instance_name
-          }
-          
-          const instance = dbInstanceName || reqBody.instance || reqBody.instanceName
-          const apiUrl = Deno.env.get('EVOLUTION_API_URL')
-          const apiKey = Deno.env.get('EVOLUTION_API_KEY')
+        if (!orgId) {
+          console.warn(`[whatsapp-webhook] Organization not found for instance "${instanceName}". Falling back to first organization.`)
+          const { data: orgs, error: orgError } = await supabase
+            .from('organizations')
+            .select('id')
+            .limit(1)
 
-          console.log(`Configurações de busca - ID Mensagem: ${messageId}, Instância: ${instance}, API URL: ${apiUrl}, API Key: ${apiKey ? 'presente' : 'ausente'}`)
-
-          if (key && instance && apiUrl && apiKey) {
-            const url = `${apiUrl.replace(/\/$/, '')}/chat/getBase64FromMediaMessage/${instance}`
-            console.log(`Fazendo requisição POST para: ${url}`)
-            const mediaResp = await fetch(url, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'apikey': apiKey
-              },
-              body: JSON.stringify({
-                message: reqBody.data,
-                convertToMp4: false
-              })
-            })
-
-            if (mediaResp.ok) {
-              const mediaData = await mediaResp.json()
-              if (mediaData && mediaData.base64) {
-                console.log('Áudio obtido com sucesso em base64 da Evolution API.')
-                audioBytes = base64ToBytes(mediaData.base64)
-                if (mediaData.mimetype) mimeType = mediaData.mimetype
-                console.log(`Áudio decodificado da Evolution API. Tamanho: ${audioBytes.length} bytes.`)
-              } else {
-                throw new Error('Evolution API response did not contain base64 field.')
-              }
-            } else {
-              const errText = await mediaResp.text()
-              throw new Error(`Failed to fetch media from Evolution API: ${mediaResp.statusText} - ${errText}`)
-            }
+          if (orgError) {
+            console.error('Error fetching organization fallback from database:', orgError)
+          } else if (orgs && orgs.length > 0) {
+            orgId = orgs[0].id
+            console.log(`Associated fallback organization ID: ${orgId}`)
           } else {
-            throw new Error(`Missing credentials/IDs to fetch audio from Evolution API. messageId: ${messageId}, instance: ${instance}`)
+            console.warn('No organizations found in database.')
           }
         }
 
-        console.log(`Iniciando transcrição com OpenAI Whisper. MimeType: ${mimeType}`)
-        const openAiApiKey = Deno.env.get('OPENAI_API_KEY')
-        if (!openAiApiKey) {
-          throw new Error('OPENAI_API_KEY is not defined in environment.')
+        let content = ''
+        const rawMessage = data.message
+        const message = rawMessage || {}
+        const isAudio = !!(message.audioMessage || data.messageType === 'audioMessage')
+
+        if (isAudio) {
+          try {
+            console.log('Áudio detectado. Iniciando recuperação do áudio...')
+            let audioBytes: Uint8Array | null = null
+            let mimeType = 'audio/ogg'
+
+            console.log('Tentando baixar áudio via URL/Base64...')
+
+            const audioMessage = message.audioMessage || {}
+            const base64Str = audioMessage.base64 || audioMessage.audio
+            const isUrl = (str: string) => typeof str === 'string' && (str.startsWith('http://') || str.startsWith('https://'))
+            const isEncryptedUrl = (str: string) => typeof str === 'string' && str.includes('whatsapp.net')
+
+            if (base64Str && !isUrl(base64Str)) {
+              console.log('Áudio em base64 direto encontrado no payload. Decodificando...')
+              audioBytes = base64ToBytes(base64Str)
+              if (audioMessage.mimetype) mimeType = audioMessage.mimetype
+              console.log(`Áudio decodificado com sucesso. Tamanho: ${audioBytes.length} bytes.`)
+            } else {
+              const urlStr = audioMessage.url || audioMessage.mediaUrl || (isUrl(audioMessage.audio) ? audioMessage.audio : null)
+              if (urlStr && isEncryptedUrl(urlStr)) {
+                console.log(`URL do áudio no payload é da CDN do WhatsApp (${urlStr}) e está criptografada. Pulando download direto para buscar via Evolution API decriptografada.`)
+              }
+              
+              if (urlStr && !isEncryptedUrl(urlStr)) {
+                console.log(`URL do áudio encontrada no payload: ${urlStr}. Baixando...`)
+                const downloadResp = await fetch(urlStr)
+                if (!downloadResp.ok) {
+                  throw new Error(`Failed to download audio from payload URL: ${downloadResp.statusText}`)
+                }
+                const arrayBuffer = await downloadResp.arrayBuffer()
+                audioBytes = new Uint8Array(arrayBuffer)
+                if (audioMessage.mimetype) mimeType = audioMessage.mimetype
+                console.log(`Áudio baixado com sucesso da URL direta. Tamanho: ${audioBytes.length} bytes.`)
+              }
+            }
+
+            if (!audioBytes) {
+              console.log('Áudio não encontrado no payload. Buscando na Evolution API...')
+              const messageId = key.id
+              
+              let dbInstanceName = null
+              if (orgId) {
+                const { data: orgData } = await supabase.from('organizations').select('evolution_instance_name').eq('id', orgId).maybeSingle()
+                if (orgData) dbInstanceName = orgData.evolution_instance_name
+              }
+              
+              const instance = dbInstanceName || reqBody.instance || reqBody.instanceName
+              const apiUrl = Deno.env.get('EVOLUTION_API_URL')
+              const apiKey = Deno.env.get('EVOLUTION_API_KEY')
+
+              console.log(`Configurações de busca - ID Mensagem: ${messageId}, Instância: ${instance}, API URL: ${apiUrl}, API Key: ${apiKey ? 'presente' : 'ausente'}`)
+
+              if (key && instance && apiUrl && apiKey) {
+                const url = `${apiUrl.replace(/\/$/, '')}/chat/getBase64FromMediaMessage/${instance}`
+                console.log(`Fazendo requisição POST para: ${url}`)
+                const mediaResp = await fetch(url, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': apiKey
+                  },
+                  body: JSON.stringify({
+                    message: reqBody.data,
+                    convertToMp4: false
+                  })
+                })
+
+                if (mediaResp.ok) {
+                  const mediaData = await mediaResp.json()
+                  if (mediaData && mediaData.base64) {
+                    console.log('Áudio obtido com sucesso em base64 da Evolution API.')
+                    audioBytes = base64ToBytes(mediaData.base64)
+                    if (mediaData.mimetype) mimeType = mediaData.mimetype
+                    console.log(`Áudio decodificado da Evolution API. Tamanho: ${audioBytes.length} bytes.`)
+                  } else {
+                    throw new Error('Evolution API response did not contain base64 field.')
+                  }
+                } else {
+                  const errText = await mediaResp.text()
+                  throw new Error(`Failed to fetch media from Evolution API: ${mediaResp.statusText} - ${errText}`)
+                }
+              } else {
+                throw new Error(`Missing credentials/IDs to fetch audio from Evolution API. messageId: ${messageId}, instance: ${instance}`)
+              }
+            }
+
+            console.log(`Iniciando transcrição com OpenAI Whisper. MimeType: ${mimeType}`)
+            const openAiApiKey = Deno.env.get('OPENAI_API_KEY')
+            if (!openAiApiKey) {
+              throw new Error('OPENAI_API_KEY is not defined in environment.')
+            }
+
+            const transcript = await transcribeAudio(audioBytes, mimeType, openAiApiKey)
+            console.log('Resposta do Whisper:', transcript)
+            content = transcript
+            if (!content) {
+              content = '[Áudio sem conteúdo/transcrição vazia]'
+            }
+          } catch (audioError) {
+            const err = audioError as Error
+            console.error('Erro detalhado Whisper:', err)
+            content = `[Erro na transcrição: ${err.message}]`
+          }
+        } else if (rawMessage) {
+          if (typeof message.conversation === 'string') {
+            content = message.conversation
+          } else if (message.extendedTextMessage && typeof message.extendedTextMessage.text === 'string') {
+            content = message.extendedTextMessage.text
+          }
         }
 
-        const transcript = await transcribeAudio(audioBytes, mimeType, openAiApiKey)
-        console.log('Resposta do Whisper:', transcript)
-        content = transcript
         if (!content) {
-          content = '[Áudio sem conteúdo/transcrição vazia]'
+          console.log(`Webhook ignored: no message content resolved for client phone ${clientPhone}.`)
+          return
         }
-      } catch (audioError) {
-        const err = audioError as Error
-        console.error('Erro detalhado Whisper:', err)
-        content = `[Erro na transcrição: ${err.message}]`
-      }
-    } else if (rawMessage) {
-      if (typeof message.conversation === 'string') {
-        content = message.conversation
-      } else if (message.extendedTextMessage && typeof message.extendedTextMessage.text === 'string') {
-        content = message.extendedTextMessage.text
-      }
-    }
 
-    if (!content) {
-      console.log(`Webhook ignored: no message content resolved for client phone ${clientPhone}.`)
-      return new Response(JSON.stringify({ success: true, message: 'No message content resolved.' }), {
-        headers: { 'Content-Type': 'application/json' },
-        status: 200
-      })
-    }
+        let conversationId: string | number | null = null
 
-    let conversationId: string | number | null = null
-
-    // Search or create conversation in conversations table, filtering by both phone and organization
-    const selectQuery = supabase
-      .from('conversations')
-      .select('id, organization_id')
-      .eq('client_phone', clientPhone)
-
-    if (orgId) {
-      selectQuery.eq('organization_id', orgId)
-    } else {
-      selectQuery.is('organization_id', null)
-    }
-
-    const { data: existingConv, error: selectError } = await selectQuery.maybeSingle()
-
-    if (selectError) {
-      console.error('Error selecting conversation from database:', selectError)
-      throw selectError
-    }
-
-    if (existingConv) {
-      conversationId = existingConv.id
-      // Update existing conversation if organization_id is null
-      if (existingConv.organization_id === null && orgId) {
-        console.log(`Updating existing conversation ${conversationId} to set organization_id: ${orgId}`)
-        const { error: updateConvError } = await supabase
-          .from('conversations')
-          .update({ organization_id: orgId })
-          .eq('id', conversationId)
-        
-        if (updateConvError) {
-          console.error(`Error updating conversation ${conversationId} with organization_id:`, updateConvError)
-        }
-      }
-    } else {
-      const { data: newConv, error: insertError } = await supabase
-        .from('conversations')
-        .insert({ client_phone: clientPhone, organization_id: orgId })
-        .select('id')
-        .maybeSingle()
-
-      if (insertError) {
-        console.error('Error inserting new conversation into database:', insertError)
-        
-        const retryQuery = supabase
+        // Search or create conversation in conversations table, filtering by both phone and organization
+        const selectQuery = supabase
           .from('conversations')
           .select('id, organization_id')
           .eq('client_phone', clientPhone)
 
         if (orgId) {
-          retryQuery.eq('organization_id', orgId)
+          selectQuery.eq('organization_id', orgId)
         } else {
-          retryQuery.is('organization_id', null)
+          selectQuery.is('organization_id', null)
         }
 
-        const { data: retryConv, error: retryError } = await retryQuery.maybeSingle()
+        const { data: existingConv, error: selectError } = await selectQuery.maybeSingle()
 
-        if (retryError) {
-          console.error('Error retrying conversation selection after insert failure:', retryError)
-          throw insertError
+        if (selectError) {
+          console.error('Error selecting conversation from database:', selectError)
+          throw selectError
         }
-        
-        if (!retryConv) {
-          console.error('Retry conversation selection returned null after insert failure.')
-          throw insertError
-        }
-        
-        conversationId = retryConv.id
-        if (retryConv.organization_id === null && orgId) {
-          console.log(`Updating retried conversation ${conversationId} to set organization_id: ${orgId}`)
-          const { error: updateRetryError } = await supabase
+
+        if (existingConv) {
+          conversationId = existingConv.id
+          // Update existing conversation if organization_id is null
+          if (existingConv.organization_id === null && orgId) {
+            console.log(`Updating existing conversation ${conversationId} to set organization_id: ${orgId}`)
+            const { error: updateConvError } = await supabase
+              .from('conversations')
+              .update({ organization_id: orgId })
+              .eq('id', conversationId)
+            
+            if (updateConvError) {
+              console.error(`Error updating conversation ${conversationId} with organization_id:`, updateConvError)
+            }
+          }
+        } else {
+          const { data: newConv, error: insertError } = await supabase
             .from('conversations')
-            .update({ organization_id: orgId })
-            .eq('id', conversationId)
-          
-          if (updateRetryError) {
-            console.error(`Error updating retried conversation ${conversationId} with organization_id:`, updateRetryError)
+            .insert({ client_phone: clientPhone, organization_id: orgId })
+            .select('id')
+            .maybeSingle()
+
+          if (insertError) {
+            console.error('Error inserting new conversation into database:', insertError)
+            
+            const retryQuery = supabase
+              .from('conversations')
+              .select('id, organization_id')
+              .eq('client_phone', clientPhone)
+
+            if (orgId) {
+              retryQuery.eq('organization_id', orgId)
+            } else {
+              retryQuery.is('organization_id', null)
+            }
+
+            const { data: retryConv, error: retryError } = await retryQuery.maybeSingle()
+
+            if (retryError) {
+              console.error('Error retrying conversation selection after insert failure:', retryError)
+              throw insertError
+            }
+            
+            if (!retryConv) {
+              console.error('Retry conversation selection returned null after insert failure.')
+              throw insertError
+            }
+            
+            conversationId = retryConv.id
+            if (retryConv.organization_id === null && orgId) {
+              console.log(`Updating retried conversation ${conversationId} to set organization_id: ${orgId}`)
+              const { error: updateRetryError } = await supabase
+                .from('conversations')
+                .update({ organization_id: orgId })
+                .eq('id', conversationId)
+              
+              if (updateRetryError) {
+                console.error(`Error updating retried conversation ${conversationId} with organization_id:`, updateRetryError)
+              }
+            }
+          } else if (newConv) {
+            conversationId = newConv.id
           }
         }
-      } else if (newConv) {
-        conversationId = newConv.id
+
+        if (!conversationId) {
+          throw new Error('Failed to resolve or create conversation ID.')
+        }
+
+        const senderType = fromMe ? 'agent' : 'client'
+        const { error: msgError } = await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            sender_type: senderType,
+            content: content,
+          })
+
+        if (msgError) {
+          console.error('Error inserting message into Supabase messages table:', msgError)
+          throw msgError
+        }
+
+        console.log(`Message successfully saved. Conversation ID: ${conversationId}, Sender Type: ${senderType}`)
+
+        if (orgId) {
+          const { error: updateAllError } = await supabase
+            .from('conversations')
+            .update({ organization_id: orgId })
+            .is('organization_id', null)
+
+          if (updateAllError) {
+            console.error('Error batch updating conversations with null organization_id:', updateAllError)
+          }
+        }
+
+        try {
+          await analyzeConversation(supabase, String(conversationId))
+        } catch (analysisError) {
+          console.error(`[AI Analyzer] Failed to run background analysis:`, analysisError)
+        }
+      } catch (err) {
+        console.error('Error processing WhatsApp message in background:', err)
       }
     }
 
-    if (!conversationId) {
-      throw new Error('Failed to resolve or create conversation ID.')
+    // @ts-ignore
+    if (typeof EdgeRuntime !== 'undefined') {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(processWebhookAsync())
+    } else {
+      // Fallback for non-EdgeRuntime environments
+      processWebhookAsync()
     }
 
-    const senderType = fromMe ? 'agent' : 'client'
-    const { error: msgError } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: conversationId,
-        sender_type: senderType,
-        content: content,
-      })
-
-    if (msgError) {
-      console.error('Error inserting message into Supabase messages table:', msgError)
-      throw msgError
-    }
-
-    console.log(`Message successfully saved. Conversation ID: ${conversationId}, Sender Type: ${senderType}`)
-
-    if (orgId) {
-      const { error: updateAllError } = await supabase
-        .from('conversations')
-        .update({ organization_id: orgId })
-        .is('organization_id', null)
-
-      if (updateAllError) {
-        console.error('Error batch updating conversations with null organization_id:', updateAllError)
-      }
-    }
-
-    try {
-      await analyzeConversation(supabase, String(conversationId))
-    } catch (analysisError) {
-      console.error(`[AI Analyzer] Failed to run synchronous analysis:`, analysisError)
-    }
-
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, message: 'Message processing started in background.' }), {
       headers: { 'Content-Type': 'application/json' },
       status: 200
     })
@@ -468,7 +481,7 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
   // Fetch conversation details
   const { data: convData } = await supabase
     .from('conversations')
-    .select('organization_id, client_phone, operator_id')
+    .select('organization_id, client_phone, operator_id, alert_sent')
     .eq('id', conversationId)
     .maybeSingle()
 
@@ -771,6 +784,12 @@ Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais (n
 
   // Dispatch WhatsApp Alert if score <= 50 and owner_whatsapp is configured
   if (analysisResult.overall_score <= 50 && ownerWhatsapp && instanceName) {
+    const alertSent = convData?.alert_sent || false
+    if (alertSent) {
+      console.log(`[AI Analyzer] Low score alert already sent for conversation ${conversationId}. Skipping WhatsApp alert dispatch.`)
+      return
+    }
+
     console.log(`[AI Analyzer] Low score alert triggered (score: ${analysisResult.overall_score}) for organization ${orgName}. Sending alert to: ${ownerWhatsapp}`)
     try {
       let operatorName = 'Não atribuído'
@@ -817,6 +836,16 @@ Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais (n
 
       if (alertResp.ok) {
         console.log(`[AI Analyzer] WhatsApp alert dispatched successfully to ${cleanPhone}.`)
+        const { error: updateErr } = await supabase
+          .from('conversations')
+          .update({ alert_sent: true })
+          .eq('id', conversationId)
+        
+        if (updateErr) {
+          console.error(`[AI Analyzer] Failed to update conversation alert_sent status:`, updateErr.message)
+        } else {
+          console.log(`[AI Analyzer] Updated conversation ${conversationId} alert_sent to true.`)
+        }
       } else {
         const alertErrText = await alertResp.text()
         console.error(`[AI Analyzer] Evolution API failed to send alert (status ${alertResp.status}):`, alertErrText)
