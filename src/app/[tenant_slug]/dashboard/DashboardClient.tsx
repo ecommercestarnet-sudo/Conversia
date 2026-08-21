@@ -678,26 +678,66 @@ export default function DashboardClient({ initialConversations, organization, la
                 </div>
               </div>
 
-              {/* Checklist do Playbook (Avaliação Binária) */}
-              {Array.isArray((activeAnalysis.scores as any)?.criteria_evaluation) && (
+              {/* Checklist do Playbook (Avaliação Multiestados) */}
+              {(Array.isArray((activeAnalysis.scores as any)?.criterios) || Array.isArray((activeAnalysis.scores as any)?.criteria_evaluation)) && (
                 <div>
                   <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
-                    Checklist de Critérios Cumpridos (Playbook)
+                    Checklist de Critérios de Vendas (Playbook)
                   </h3>
                   <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3.5">
-                    {((activeAnalysis.scores as any).criteria_evaluation as any[]).map((criterion, idx) => (
-                      <div key={idx} className="flex items-start gap-3 text-xs border-b border-slate-100 last:border-b-0 pb-3 last:pb-0">
-                        {criterion.fulfilled ? (
-                          <span className="text-emerald-600 font-bold select-none text-sm">✓</span>
-                        ) : (
-                          <span className="text-rose-505 text-rose-600 font-bold select-none text-sm">✗</span>
-                        )}
-                        <div>
-                          <p className="font-bold text-slate-800">{criterion.item || criterion.criterion}</p>
-                          <p className="text-slate-500 mt-0.5 leading-relaxed text-[11px]">{criterion.explanation || criterion.details}</p>
+                    {(((activeAnalysis.scores as any).criterios || (activeAnalysis.scores as any).criteria_evaluation || []) as any[]).map((criterion, idx) => {
+                      const status = criterion.status;
+                      const pontos = criterion.pontos !== undefined ? criterion.pontos : (criterion.fulfilled ? 1.0 : 0.0);
+                      const title = criterion.nome_criterio || criterion.item || criterion.criterion;
+                      const description = criterion.justificativa || criterion.explanation || criterion.details;
+                      
+                      let badgeColor = "text-slate-400";
+                      let badgeIcon = "N/A";
+                      if (status === "CUMPRIDO") {
+                        badgeColor = "text-emerald-600 font-bold";
+                        badgeIcon = "✓";
+                      } else if (status === "PARCIAL") {
+                        badgeColor = "text-amber-500 font-bold";
+                        badgeIcon = "⚠";
+                      } else if (status === "NAO_CUMPRIDO") {
+                        badgeColor = "text-rose-600 font-bold";
+                        badgeIcon = "✗";
+                      } else if (status === "N_A") {
+                        badgeColor = "text-slate-400 font-bold";
+                        badgeIcon = "—";
+                      } else if (criterion.fulfilled === true) {
+                        badgeColor = "text-emerald-600 font-bold";
+                        badgeIcon = "✓";
+                      } else if (criterion.fulfilled === false) {
+                        badgeColor = "text-rose-600 font-bold";
+                        badgeIcon = "✗";
+                      }
+
+                      return (
+                        <div key={idx} className="flex items-start gap-3 text-xs border-b border-slate-100 last:border-b-0 pb-3 last:pb-0">
+                          <span className={`text-sm select-none shrink-0 ${badgeColor}`}>{badgeIcon}</span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-bold text-slate-800">{title}</p>
+                              {status && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
+                                  status === "CUMPRIDO" 
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-100" 
+                                    : status === "PARCIAL"
+                                      ? "bg-amber-50 text-amber-700 border border-amber-100"
+                                      : status === "NAO_CUMPRIDO"
+                                        ? "bg-rose-50 text-rose-700 border border-rose-100"
+                                        : "bg-slate-100 text-slate-500 border border-slate-200"
+                                }`}>
+                                  {status} ({pontos} pts)
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-slate-500 mt-0.5 leading-relaxed text-[11px]">{description}</p>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

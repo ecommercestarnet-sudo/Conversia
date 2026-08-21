@@ -239,54 +239,66 @@ export async function analyzeConversation(conversationId: string, force: boolean
     customPrompt
   });
 
-  const systemPrompt = `Você é um auditor de vendas altamente especializado, atuando de forma rigorosa, literal e matemática. Sua tarefa é analisar o histórico de conversas entre o cliente e o atendente e retornar uma análise estruturada estritamente no formato JSON fornecido abaixo.
+  const systemPrompt = `Você é um auditor comercial justo e imparcial. Analise o estágio da conversa antes de julgar. Não exija técnicas de fechamento avançado ou objeção se o cliente apenas fez uma pergunta simples. Justifique cada item no JSON antes de definir o status.
 
-Sua auditoria deve verificar item por item do Playbook de forma binária (true/false) e retornar a nota comercial baseada estritamente na porcentagem de critérios cumpridos.
+Sua tarefa é analisar o histórico de conversas entre o cliente e o atendente e retornar uma análise estruturada estritamente no formato JSON fornecido abaixo.
+
+Sua auditoria deve verificar item por item do Playbook (tanto os critérios de avaliação quanto instruções adicionais) e retornar uma avaliação com 4 estados para cada critério.
 
 ---
-REGRAS ABSOLUTAS DE AVALIAÇÃO:
+REGRAS DE AVALIAÇÃO POR CRITÉRIO (4 ESTADOS):
 
-1. Identificação de Critérios:
-Analise as diretrizes do Playbook ("Critérios de Avaliação" e "Instruções Adicionais") e monte a lista de critérios comerciais individuais (no mínimo 5 itens).
+Para cada critério comercial individual (mínimo de 5 itens baseados nas diretrizes do playbook), você deve definir:
+1. "nome_criterio": Nome descritivo da regra ou critério comercial avaliado.
+2. "justificativa": Seu raciocínio lógico detalhado e prévio descrevendo a situação real da conversa antes de determinar o status.
+3. "status": Um dos seguintes 4 valores estritos:
+   - "CUMPRIDO": O atendente executou a técnica de forma clara e correta (vale 1.0 ponto).
+   - "PARCIAL": O atendente executou parcialmente, com hesitação ou de forma incompleta (vale 0.5 pontos).
+   - "NAO_CUMPRIDO": O atendente teve oportunidade explícita de aplicar, mas falhou completamente (vale 0.0 pontos).
+   - "N_A": O cenário para essa regra NÃO aconteceu na conversa (ex: o cliente não fez nenhuma pergunta sobre preço, não apresentou objeção, ou o contato está no início).
 
-2. Avaliação Binária:
-Para cada critério comercial, avalie se ele foi cumprido ("fulfilled": true) ou descumprido ("fulfilled": false). Forneça uma explicação concisa e baseada em fatos da conversa.
+---
+REGRA RÍGIDA PARA N_A (NÃO APLICÁVEL):
+- Você NUNCA deve marcar "NAO_CUMPRIDO" para "Quebra de Objeções" se o cliente não fez nenhuma objeção explícita. Nesses casos, o status DEVE ser obrigatoriamente "N_A".
+- Se um critério for classificado como "N_A", ele não entra no cálculo da nota (ele deve ser desconsiderado tanto dos pontos obtidos quanto dos pontos máximos aplicáveis).
 
-3. Cálculo Rígido da Nota Comercial:
-Calcule o campo "commercial_quality_score" como:
-(número de critérios comerciais cumpridos / total de critérios comerciais avaliados) * 100
-Arredonde para o número inteiro mais próximo. Esta nota deve ser puramente baseada nos critérios e regras abaixo.
+---
+CÁLCULO DA NOTA FINAL COMERCIAL:
+A nota comercial final ("commercial_quality_score") de 0 a 100 é calculada da seguinte forma:
+- Pontos Obtidos = Soma de todos os pontos dos critérios avaliados (CUMPRIDO = 1.0, PARCIAL = 0.5, NAO_CUMPRIDO = 0.0).
+- Total Aplicável = Quantidade de critérios comerciais cujo status NÃO é "N_A".
+- Nota Final = (Pontos Obtidos / Total Aplicável) * 100, arredondado para o inteiro mais próximo.
+- Se todos os critérios forem classificados como "N_A" (Total Aplicável = 0), a nota final comercial DEVE ser 100.
 
-4. Separação de Tempo de Resposta:
-Avalie o tempo de resposta separadamente e retorne no campo "response_time_score" (0 a 100). O tempo de resposta NÃO deve afetar a "commercial_quality_score".
+O campo "overall_score" deve ser idêntico à "commercial_quality_score".
+O tempo de resposta do atendente deve ser avaliado separadamente no campo "response_time_score" (0 a 100) e NÃO interfere no cálculo da nota comercial final.
 
-5. Nota Geral:
-O campo "overall_score" deve ser exatamente igual à "commercial_quality_score".
-
-6. Regras de Travas e Limites (Hard Limits):
-- Síndrome do Panfleteiro: Se o atendente enviou preços antes de investigar os objetivos do cliente, o critério de Investigação deve ser false, a nota legada "scores.investigation" deve ser 0, e a nota comercial final ("commercial_quality_score" e "overall_score") NÃO pode ultrapassar 40.
-- Falta de Controle: Se a última mensagem do atendente na conversa NÃO terminar com uma pergunta de condução ("?" na última linha), o critério de Fechamento deve ser false, a nota legada "scores.closing" deve ser 0.
+---
+REGRAS DE TRAVAS E LIMITES (HARD LIMITS):
+- Síndrome do Panfleteiro: Se o atendente enviou preços antes de investigar os objetivos do cliente, o critério de Investigação deve ser "NAO_CUMPRIDO", a nota legada "scores.investigation" deve ser 0, e a nota comercial final ("commercial_quality_score" e "overall_score") NÃO pode ultrapassar 40.
+- Falta de Controle: Se a última mensagem do atendente na conversa NÃO terminar com uma pergunta de condução ("?" na última linha), o critério de Fechamento deve ser "NAO_CUMPRIDO", a nota legada "scores.closing" deve ser 0.
 - Falta de Saudação: Se o atendente não saudar o cliente ou não chamá-lo pelo nome na primeira mensagem dele, limite a nota de empatia legada "scores.empathy" a no máximo 30.
-- Falhas Graves: Cada alucinação (oferta inexistente na base de conhecimento) ou dor do cliente ignorada conta como Falha Grave. Cada Falha Grave reduz a nota final comercial ("commercial_quality_score" e "overall_score") em 20 pontos de penalidade direta. Insira em "weaknesses" com o prefixo exato "FALHA GRAVE: [descrição]".
+- Falhas Graves: Cada alucinação (oferta inexistente na base de conhecimento) ou dor do cliente ignorada conta como Falha Grave. Cada Falha Grave reduz a nota comercial final em 20 pontos de penalidade direta. Insira em "weaknesses" com o prefixo exato "FALHA GRAVE: [descrição]".
 
 ---
 FORMATO DA RESPOSTA JSON:
 Você deve retornar unicamente um objeto JSON válido no seguinte formato (sem tags markdown de código e sem texto antes ou depois):
 {
-  "overall_score": 60,
-  "commercial_quality_score": 60,
-  "response_time_score": 80,
-  "criteria_evaluation": [
+  "overall_score": 80,
+  "commercial_quality_score": 80,
+  "response_time_score": 90,
+  "criterios": [
     {
-      "item": "Nome do critério / regra avaliada",
-      "fulfilled": true,
-      "explanation": "Detalhamento conciso do porquê foi marcado como cumprido."
+      "nome_criterio": "Nome do critério / regra avaliada",
+      "justificativa": "Descrição do comportamento analisado no chat antes do status...",
+      "status": "CUMPRIDO",
+      "pontos": 1.0
     }
   ],
   "scores": {
     "empathy": 90,
-    "response_time": 80,
-    "investigation": 50,
+    "response_time": 90,
+    "investigation": 80,
     "closing": 70
   },
   "summary": "Resumo objetivo da auditoria...",
@@ -338,6 +350,40 @@ Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou
     throw new Error(`Invalid JSON format received from OpenAI: ${parseErr.message}`);
   }
 
+  // Step 4.5: Programmatic score calculation to ensure mathematical precision
+  if (Array.isArray(analysisResult.criterios)) {
+    let pointsObtained = 0;
+    let totalApplicable = 0;
+    
+    analysisResult.criterios.forEach((c: any) => {
+      const status = String(c.status).toUpperCase();
+      if (status !== 'N_A') {
+        totalApplicable += 1;
+        if (status === 'CUMPRIDO') {
+          pointsObtained += 1.0;
+          c.pontos = 1.0;
+        } else if (status === 'PARCIAL') {
+          pointsObtained += 0.5;
+          c.pontos = 0.5;
+        } else {
+          c.pontos = 0.0;
+        }
+      } else {
+        c.pontos = 0.0;
+      }
+    });
+
+    let calculatedScore = 100;
+    if (totalApplicable > 0) {
+      calculatedScore = Math.round((pointsObtained / totalApplicable) * 100);
+    }
+    
+    analysisResult.commercial_quality_score = calculatedScore;
+    analysisResult.overall_score = calculatedScore;
+    
+    console.log(`[AI Analyzer] Programmatic score calculation: Points = ${pointsObtained}, Total = ${totalApplicable}, Score = ${calculatedScore}`);
+  }
+
   // Step 5: Save analysis JSON to Supabase
   try {
     console.log(`[AI Analyzer] Saving analysis to database (analyses table) for conversation ${conversationId}...`);
@@ -347,7 +393,8 @@ Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou
       ...analysisResult.scores,
       commercial_quality_score: analysisResult.commercial_quality_score,
       response_time_score: analysisResult.response_time_score,
-      criteria_evaluation: analysisResult.criteria_evaluation
+      criterios: analysisResult.criterios,
+      criteria_evaluation: analysisResult.criterios // duplicate for backward compatibility
     };
 
     const { error: upsertError } = await supabase
