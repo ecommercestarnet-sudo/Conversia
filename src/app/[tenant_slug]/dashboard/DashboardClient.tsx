@@ -21,11 +21,12 @@ import {
   BookOpen,
   LogOut,
   ExternalLink,
-  Users
+  Users,
+  Settings
 } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { logout } from '@/app/auth-actions';
-import { assignOperatorToConversation } from './team/actions';
+import { assignOperatorToConversation } from './settings/actions';
 
 interface Analysis {
   id: string | number;
@@ -268,11 +269,12 @@ export default function DashboardClient({ initialConversations, organization, la
             </button>
 
             <button
-              onClick={() => router.push(`/${tenantSlug}/dashboard/team`)}
+              onClick={() => router.push(`/${tenantSlug}/dashboard/settings`)}
               className="px-4 py-2 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 transition-all flex items-center gap-2 cursor-pointer shrink-0 shadow-sm"
+              title="Configurações Gerais"
             >
-              <Users className="w-4 h-4 text-slate-500" />
-              <span>Equipe</span>
+              <Settings className="w-4 h-4 text-slate-500" />
+              <span>Configurações</span>
             </button>
 
             <button
@@ -675,6 +677,30 @@ export default function DashboardClient({ initialConversations, organization, la
                   </div>
                 </div>
               </div>
+
+              {/* Checklist do Playbook (Avaliação Binária) */}
+              {Array.isArray((activeAnalysis.scores as any)?.criteria_evaluation) && (
+                <div>
+                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+                    Checklist de Critérios Cumpridos (Playbook)
+                  </h3>
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm space-y-3.5">
+                    {((activeAnalysis.scores as any).criteria_evaluation as any[]).map((criterion, idx) => (
+                      <div key={idx} className="flex items-start gap-3 text-xs border-b border-slate-100 last:border-b-0 pb-3 last:pb-0">
+                        {criterion.fulfilled ? (
+                          <span className="text-emerald-600 font-bold select-none text-sm">✓</span>
+                        ) : (
+                          <span className="text-rose-505 text-rose-600 font-bold select-none text-sm">✗</span>
+                        )}
+                        <div>
+                          <p className="font-bold text-slate-800">{criterion.item || criterion.criterion}</p>
+                          <p className="text-slate-500 mt-0.5 leading-relaxed text-[11px]">{criterion.explanation || criterion.details}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Strengths & Weaknesses Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

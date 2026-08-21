@@ -3,12 +3,44 @@
 import { createClient } from '@/lib/auth-server';
 import { revalidatePath } from 'next/cache';
 
+export interface CompanySettingsData {
+  company_id: string;
+  owner_whatsapp: string;
+}
+
 export interface OperatorFormData {
   id?: string;
   company_id: string;
   name: string;
   role?: string;
   work_hours?: string;
+}
+
+export async function saveCompanySettings(data: CompanySettingsData) {
+  try {
+    if (!data.company_id) {
+      return { success: false, error: 'ID da organização é obrigatório.' };
+    }
+
+    const supabase = await createClient();
+
+    const { error } = await supabase
+      .from('organizations')
+      .update({ owner_whatsapp: data.owner_whatsapp || null })
+      .eq('id', data.company_id);
+
+    if (error) {
+      console.error('Error updating company settings:', error);
+      return { success: false, error: error.message };
+    }
+
+    revalidatePath('/[tenant_slug]/dashboard/settings', 'page');
+    revalidatePath('/[tenant_slug]/dashboard', 'page');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Unhandled exception in saveCompanySettings:', error);
+    return { success: false, error: error.message || 'Erro interno no servidor' };
+  }
 }
 
 export async function saveOperator(data: OperatorFormData) {
@@ -42,7 +74,7 @@ export async function saveOperator(data: OperatorFormData) {
       return { success: false, error: error.message };
     }
 
-    revalidatePath('/[tenant_slug]/dashboard/team', 'page');
+    revalidatePath('/[tenant_slug]/dashboard/settings', 'page');
     revalidatePath('/[tenant_slug]/dashboard', 'page');
     return { success: true };
   } catch (error: any) {
@@ -65,7 +97,7 @@ export async function deleteOperator(id: string) {
       return { success: false, error: error.message };
     }
 
-    revalidatePath('/[tenant_slug]/dashboard/team', 'page');
+    revalidatePath('/[tenant_slug]/dashboard/settings', 'page');
     revalidatePath('/[tenant_slug]/dashboard', 'page');
     return { success: true };
   } catch (error: any) {

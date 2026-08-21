@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/auth-server';
 import { redirect } from 'next/navigation';
-import TeamClient from './TeamClient';
+import SettingsClient from './SettingsClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,19 +10,19 @@ interface PageProps {
   }>;
 }
 
-export default async function TeamPage({ params }: PageProps) {
+export default async function SettingsPage({ params }: PageProps) {
   const { tenant_slug } = await params;
   const supabase = await createClient();
 
   // 1. Fetch organization by slug
   const { data: org, error: orgError } = await supabase
     .from('organizations')
-    .select('id, name, whatsapp_status')
+    .select('id, name, slug, evolution_instance_name, whatsapp_status, owner_whatsapp')
     .eq('slug', tenant_slug)
     .maybeSingle();
 
   if (orgError || !org) {
-    console.error('Organization not found for team:', tenant_slug, orgError);
+    console.error('Organization not found for settings:', tenant_slug, orgError);
     redirect('/login');
   }
 
@@ -61,7 +61,7 @@ export default async function TeamPage({ params }: PageProps) {
   }
 
   return (
-    <TeamClient 
+    <SettingsClient 
       company={org} 
       initialOperators={operators || []} 
       lastStatusLog={lastStatusLog}

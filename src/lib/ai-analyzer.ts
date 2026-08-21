@@ -1,12 +1,48 @@
 import OpenAI from 'openai';
 import { supabase } from './supabase';
+import fs from 'fs';
+import path from 'path';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function analyzeConversation(conversationId: string) {
-  console.log(`[AI Analyzer] Starting AI analysis for conversation ID: ${conversationId}`);
+let EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;
+let EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY;
+
+// Fallback manual parser for .env.local
+if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
+  try {
+    const envPath = path.resolve(process.cwd(), '.env.local');
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, 'utf8');
+      envContent.split(/\r?\n/).forEach(line => {
+        const parts = line.split('=');
+        if (parts.length >= 2) {
+          const key = parts[0].trim();
+          let value = parts.slice(1).join('=').trim();
+          if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+          if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+          
+          if (key === 'EVOLUTION_API_URL') EVOLUTION_API_URL = value;
+          if (key === 'EVOLUTION_API_KEY') EVOLUTION_API_KEY = value;
+        }
+      });
+    }
+  } catch (e) {
+    console.error('Failed to parse .env.local fallback in AI Analyzer:', e);
+  }
+}
+
+if (!EVOLUTION_API_URL) {
+  EVOLUTION_API_URL = 'http://216.238.122.167:8081';
+}
+if (!EVOLUTION_API_KEY) {
+  EVOLUTION_API_KEY = '429683C4C977415CAAFCCE10F7D57E11';
+}
+
+export async function analyzeConversation(conversationId: string, force: boolean = false) {
+  console.log(`[AI Analyzer] Starting AI analysis for conversation ID: ${conversationId} (force=${force})`);
 
   // Step 1: Fetch messages from Supabase
   let messages;
@@ -14,7 +50,7 @@ export async function analyzeConversation(conversationId: string) {
     console.log(`[AI Analyzer] Fetching messages from Supabase for conversation: ${conversationId}`);
     const { data, error: selectError } = await supabase
       .from('messages')
-      .select('sender_type, content, created_at')
+      .select('id, sender_type, content, created_at')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
 
@@ -33,75 +69,139 @@ export async function analyzeConversation(conversationId: string) {
     return;
   }
 
-  // Step 1.5: Fetch conversation's company_id and then the AI playbook
-  let companyId = null;
+  // Trigger constraints
+  if (!force) {
+    if (messages.length < 3) {
+      console.log(`[AI Analyzer] Skipping analysis. Conversation ${conversationId} has only ${messages.length} messages (min 3 required).`);
+      return;
+    }
+
+    const lastMessage = messages[messages.length - 1];
+    const lastMessageTime = new Date(lastMessage.created_at).getTime();
+    const now = Date.now();
+    const inactivityThreshold = 15 * 60 * 1000; // 15 minutes in ms
+
+    const isSeller = lastMessage.sender_type === 'agent' || lastMessage.sender_type === 'atendente';
+    const isInactive = (now - lastMessageTime) >= inactivityThreshold;
+
+    if (!isSeller && !isInactive) {
+      const delay = inactivityThreshold - (now - lastMessageTime);
+      console.log(`[AI Analyzer] Client message received. Scheduling deferred analysis in ${delay / 1000}s for conversation ${conversationId}.`);
+
+      setTimeout(async () => {
+        try {
+          console.log(`[AI Analyzer] Running scheduled check for conversation ${conversationId}...`);
+          const { data: latestMsgs } = await supabase
+            .from('messages')
+            .select('id, sender_type, created_at')
+            .eq('conversation_id', conversationId)
+            .order('created_at', { ascending: true });
+
+          if (latestMsgs && latestMsgs.length >= 3) {
+            const currentLast = latestMsgs[latestMsgs.length - 1];
+            const currentLastTime = new Date(currentLast.created_at).getTime();
+            const currentIsSeller = currentLast.sender_type === 'agent' || currentLast.sender_type === 'atendente';
+            const currentIsInactive = (Date.now() - currentLastTime) >= inactivityThreshold;
+
+            if (currentIsSeller || currentIsInactive) {
+              console.log(`[AI Analyzer] Inactivity check passed. Triggering deferred analysis for conversation ${conversationId}.`);
+              await analyzeConversation(conversationId, true);
+            } else {
+              console.log(`[AI Analyzer] Conversation ${conversationId} had new activity. Postponing analysis.`);
+            }
+          }
+        } catch (err) {
+          console.error(`[AI Analyzer] Error in scheduled analysis for conversation ${conversationId}:`, err);
+        }
+      }, delay);
+
+      return;
+    }
+  }
+
+  // Step 1.5: Fetch conversation's organization_id, client_phone, operator_id and the AI playbook
+  let orgId = null;
+  let clientPhone = '';
+  let operatorId = null;
   try {
     const { data: convData, error: convErr } = await supabase
       .from('conversations')
-      .select('company_id')
+      .select('organization_id, client_phone, operator_id')
       .eq('id', conversationId)
       .maybeSingle();
 
     if (convErr) {
-      console.error(`[AI Analyzer] Error fetching conversation company_id for conversation ${conversationId}:`, convErr);
-    } else {
-      companyId = convData?.company_id;
-    }
-
-    if (!companyId) {
-      console.log(`[AI Analyzer] No company_id directly associated with conversation ${conversationId}. Fetching default company.`);
-      const { data: companies } = await supabase
-        .from('companies')
-        .select('id')
-        .limit(1);
-      if (companies && companies.length > 0) {
-        companyId = companies[0].id;
-      }
+      console.error(`[AI Analyzer] Error fetching conversation data for conversation ${conversationId}:`, convErr);
+    } else if (convData) {
+      orgId = convData.organization_id;
+      clientPhone = convData.client_phone || '';
+      operatorId = convData.operator_id;
     }
   } catch (err: any) {
-    console.error(`[AI Analyzer] Failed to fetch company_id for conversation ${conversationId}:`, err);
+    console.error(`[AI Analyzer] Failed to fetch conversation data for conversation ${conversationId}:`, err);
   }
 
   let playbook = null;
-  if (companyId) {
+  let ownerWhatsapp = null;
+  let instanceName = null;
+  let orgName = '';
+
+  if (orgId) {
     try {
+      const { data: orgData } = await supabase
+        .from('organizations')
+        .select('id, name, evolution_instance_name, owner_whatsapp')
+        .eq('id', orgId)
+        .maybeSingle();
+
+      if (orgData) {
+        orgName = orgData.name;
+        ownerWhatsapp = orgData.owner_whatsapp;
+        instanceName = orgData.evolution_instance_name;
+      }
+
       const { data: playbookData, error: playbookError } = await supabase
         .from('ai_playbooks')
         .select('company_context, knowledge_base, evaluation_criteria, custom_prompt')
-        .eq('organization_id', companyId)
+        .eq('organization_id', orgId)
         .maybeSingle();
 
       if (playbookError) {
-        console.error(`[AI Analyzer] Error fetching playbook for company ${companyId}:`, playbookError);
+        console.error(`[AI Analyzer] Error fetching playbook for organization ${orgId}:`, playbookError);
       } else if (playbookData) {
         playbook = playbookData;
-        console.log(`[AI Analyzer] Playbook loaded successfully for company ${companyId}`);
+        console.log(`[AI Analyzer] Playbook loaded successfully for organization ${orgId}`);
       }
     } catch (err: any) {
-      console.error(`[AI Analyzer] Failed to fetch playbook for company ${companyId}:`, err);
+      console.error(`[AI Analyzer] Failed to fetch organization/playbook for organization ${orgId}:`, err);
     }
   }
 
-  // Fallback: Se não encontrar o playbook para o ID específico, busca o primeiro cadastrado
+  // Fallback Playbook Load
   if (!playbook) {
     try {
-      console.log(`[AI Analyzer] No playbook found for company_id ${companyId}. Attempting fallback to the first playbook in database.`);
-      const { data: fallbackPlaybook, error: fallbackError } = await supabase
+      console.log(`[AI Analyzer] Fallback to first playbook.`);
+      const { data: fallbackPlaybook } = await supabase
         .from('ai_playbooks')
-        .select('company_context, knowledge_base, evaluation_criteria, custom_prompt')
+        .select('organization_id, company_context, knowledge_base, evaluation_criteria, custom_prompt')
         .limit(1)
         .maybeSingle();
-
-      if (fallbackError) {
-        console.error(`[AI Analyzer] Error fetching fallback playbook:`, fallbackError);
-      } else if (fallbackPlaybook) {
+      if (fallbackPlaybook) {
         playbook = fallbackPlaybook;
-        console.log(`[AI Analyzer] Fallback playbook loaded successfully.`);
-      } else {
-        console.log(`[AI Analyzer] No playbooks found in database at all. Using default values.`);
+        orgId = fallbackPlaybook.organization_id;
+        const { data: orgData } = await supabase
+          .from('organizations')
+          .select('id, name, evolution_instance_name, owner_whatsapp')
+          .eq('id', orgId)
+          .maybeSingle();
+        if (orgData) {
+          orgName = orgData.name;
+          ownerWhatsapp = orgData.owner_whatsapp;
+          instanceName = orgData.evolution_instance_name;
+        }
       }
-    } catch (err: any) {
-      console.error(`[AI Analyzer] Failed to fetch fallback playbook:`, err);
+    } catch (e) {
+      console.error('[AI Analyzer] Fallback playbook load failed:', e);
     }
   }
 
@@ -139,91 +239,61 @@ export async function analyzeConversation(conversationId: string) {
     customPrompt
   });
 
-  console.log("Playbook carregado:", playbook);
-
   const systemPrompt = `Você é um auditor de vendas altamente especializado, atuando de forma rigorosa, literal e matemática. Sua tarefa é analisar o histórico de conversas entre o cliente e o atendente e retornar uma análise estruturada estritamente no formato JSON fornecido abaixo.
 
-ATENÇÃO: Você DEVE julgar o atendimento de forma fria, objetiva, literal e com base estrita no Playbook e nas regras abaixo.
+Sua auditoria deve verificar item por item do Playbook de forma binária (true/false) e retornar a nota comercial baseada estritamente na porcentagem de critérios cumpridos.
 
 ---
-REGRAS ABSOLUTAS E TRAVAS DE PONTUAÇÃO (HARD LIMITS):
+REGRAS ABSOLUTAS DE AVALIAÇÃO:
 
-1. Síndrome do Panfleteiro:
-Se o atendente enviar preço/tabela sem antes investigar ativamente o objetivo/perfil do cliente (metas de saúde, emagrecimento, histórico de treinos, etc.), você DEVE travar as pontuações da seguinte forma:
-- O critério de Investigação ("scores.investigation") deve ser estritamente 0.
-- O Score Geral ("overall_score") não pode passar de 40 (limite máximo de 40).
+1. Identificação de Critérios:
+Analise as diretrizes do Playbook ("Critérios de Avaliação" e "Instruções Adicionais") e monte a lista de critérios comerciais individuais (no mínimo 5 itens).
 
-2. Falta de Controle:
-Se a última mensagem enviada pelo atendente na conversa NÃO terminar com uma pergunta clara de fechamento ou condução (ou seja, se o atendente não usou o caractere de ponto de interrogação "?" na última linha da última mensagem enviada por ele), você DEVE aplicar a seguinte trava:
-- O critério de Fechamento ("scores.closing") deve ser estritamente 0.
-Qualquer sugestão ou convite sem uma pergunta final "?" explícita do atendente configura Falta de Controle e a nota deve ser 0.
+2. Avaliação Binária:
+Para cada critério comercial, avalie se ele foi cumprido ("fulfilled": true) ou descumprido ("fulfilled": false). Forneça uma explicação concisa e baseada em fatos da conversa.
 
-3. Falta de Saudação:
-Se o atendente não der saudações cordiais (como "Olá", "Bom dia", "Boa tarde", "Boa noite" ou equivalentes) ou não usar o nome do cliente na primeira interação/mensagem do atendente, você DEVE aplicar a seguinte trava:
-- O critério de Empatia ("scores.empathy") não pode passar de 30 (limite máximo de 30).
+3. Cálculo Rígido da Nota Comercial:
+Calcule o campo "commercial_quality_score" como:
+(número de critérios comerciais cumpridos / total de critérios comerciais avaliados) * 100
+Arredonde para o número inteiro mais próximo. Esta nota deve ser puramente baseada nos critérios e regras abaixo.
 
-4. Polidez Não É Venda:
-Não dê nota alta em Empatia ("scores.empathy") ou no Score Geral ("overall_score") apenas porque o atendente usou emojis ou foi educado. A nota exige a aplicação da técnica (investigação de objetivos e condução/fechamento ativa).
+4. Separação de Tempo de Resposta:
+Avalie o tempo de resposta separadamente e retorne no campo "response_time_score" (0 a 100). O tempo de resposta NÃO deve afetar a "commercial_quality_score".
 
----
-DEFINIÇÃO RÍGIDA DE FALHAS GRAVES:
+5. Nota Geral:
+O campo "overall_score" deve ser exatamente igual à "commercial_quality_score".
 
-Uma Falha Grave ocorre quando o atendente cometer qualquer uma das seguintes ações:
-- Alucinação/Mentira: Oferecer descontos, modalidades, planos, condições ou horários que NÃO existem explicitamente na "Base de Conhecimento" do Playbook.
-- Ignorar a Dor: O cliente relata/menciona um problema ou dor (ex: dor física, vergonha de treinar, falta de tempo) e o atendente ignora esse relato, focando apenas em preço ou características técnicas.
-
-Sempre que uma Falha Grave ocorrer:
-- Ela deve ser obrigatoriamente listada na lista de "Pontos Fracos" ("weaknesses") com o prefixo exato "FALHA GRAVE: [descrição detalhada da falha]".
-- O Score Geral ("overall_score") deve sofrer uma penalidade direta e matemática de -20 pontos para cada Falha Grave detectada (por exemplo, se o score calculado antes da penalidade era 70, e ocorreu 1 Falha Grave, o score final deve ser 50. Se ocorreram 2 Falhas Graves, subtraia 40 pontos, resultando em 30).
+6. Regras de Travas e Limites (Hard Limits):
+- Síndrome do Panfleteiro: Se o atendente enviou preços antes de investigar os objetivos do cliente, o critério de Investigação deve ser false, a nota legada "scores.investigation" deve ser 0, e a nota comercial final ("commercial_quality_score" e "overall_score") NÃO pode ultrapassar 40.
+- Falta de Controle: Se a última mensagem do atendente na conversa NÃO terminar com uma pergunta de condução ("?" na última linha), o critério de Fechamento deve ser false, a nota legada "scores.closing" deve ser 0.
+- Falta de Saudação: Se o atendente não saudar o cliente ou não chamá-lo pelo nome na primeira mensagem dele, limite a nota de empatia legada "scores.empathy" a no máximo 30.
+- Falhas Graves: Cada alucinação (oferta inexistente na base de conhecimento) ou dor do cliente ignorada conta como Falha Grave. Cada Falha Grave reduz a nota final comercial ("commercial_quality_score" e "overall_score") em 20 pontos de penalidade direta. Insira em "weaknesses" com o prefixo exato "FALHA GRAVE: [descrição]".
 
 ---
-DÚVIDA VS. OBJEÇÃO (PREVENÇÃO DE FALSOS POSITIVOS):
-
-Diferencie rigorosamente o que são simples dúvidas de objeções de vendas:
-- Dúvida: Perguntas normais do cliente sobre como funciona, valor, horário, endereço (ex: "Qual o horário?", "Quanto custa?"). Não classifique como objeção. NUNCA coloque dúvidas no array "objections".
-- Objeção: Resistência declarada do cliente à compra (ex: "Está caro", "Não tenho limite", "Longe da minha casa", "Vou pensar", "Preciso falar com minha esposa/marido"). Só registre objeções nestes casos.
-
----
-MÉTODO DE AVALIAÇÃO MATEMÁTICA E LITERAL (PASSO A PASSO):
-
-Para garantir a precisão, execute os seguintes passos mentais de auditoria:
-Passo 1: Verifique a última mensagem do atendente. Se o caractere "?" não for o encerramento dela, defina scores.closing = 0 imediatamente.
-Passo 2: Verifique a primeira mensagem do atendente. Se faltar saudação ou nome do cliente, limite scores.empathy a no máximo 30.
-Passo 3: Verifique se houve preço enviado antes de investigação dos objetivos. Se sim, force scores.investigation = 0 e limite overall_score a no máximo 40.
-Passo 4: Verifique as Falhas Graves. Identifique mentiras/alucinações contrárias à Base de Conhecimento e dores ignoradas. Para cada uma, adicione "FALHA GRAVE: ..." em weaknesses e retire 20 pontos de overall_score.
-Passo 5: Filtre o array "objections". Apenas inclua as objeções reais (resistências). Dúvidas não entram de forma alguma.
-
----
-FORMATO DA RESPOSTA:
-
-Seja direto e cirúrgico no "Resumo do Atendimento" ("summary"). Não invente justificativas ou desculpas para amenizar as falhas do atendente.
-
-O JSON de retorno deve possuir exatamente a seguinte estrutura:
+FORMATO DA RESPOSTA JSON:
+Você deve retornar unicamente um objeto JSON válido no seguinte formato (sem tags markdown de código e sem texto antes ou depois):
 {
-  "overall_score": 85,
+  "overall_score": 60,
+  "commercial_quality_score": 60,
+  "response_time_score": 80,
+  "criteria_evaluation": [
+    {
+      "item": "Nome do critério / regra avaliada",
+      "fulfilled": true,
+      "explanation": "Detalhamento conciso do porquê foi marcado como cumprido."
+    }
+  ],
   "scores": {
     "empathy": 90,
     "response_time": 80,
-    "investigation": 75,
-    "closing": 85
+    "investigation": 50,
+    "closing": 70
   },
-  "summary": "Resumo detalhado da conversa...",
-  "strengths": [
-    "Ponto forte 1",
-    "Ponto forte 2"
-  ],
-  "weaknesses": [
-    "Ponto fraco 1",
-    "Ponto fraco 2"
-  ],
-  "recommendations": [
-    "Recomendação prática 1",
-    "Recomendação prática 2"
-  ],
-  "objections": [
-    "Objeção de preço",
-    "Objeção de horário"
-  ]
+  "summary": "Resumo objetivo da auditoria...",
+  "strengths": ["Ponto forte 1"],
+  "weaknesses": ["Ponto fraco 1"],
+  "recommendations": ["Recomendação prática 1"],
+  "objections": ["Objeção identificada (somente resistências reais)"]
 }
 
 Contexto da empresa:
@@ -254,9 +324,6 @@ Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou
     console.log(`[AI Analyzer] OpenAI API completion response received successfully.`);
   } catch (err: any) {
     console.error(`[AI Analyzer] OpenAI API Call Failed for conversation ${conversationId}:`, err);
-    if (err.status) console.error(`[AI Analyzer] OpenAI HTTP Status Code: ${err.status}`);
-    if (err.message) console.error(`[AI Analyzer] OpenAI Error Message: ${err.message}`);
-    if (err.code) console.error(`[AI Analyzer] OpenAI Error Code: ${err.code}`);
     throw new Error(`OpenAI API call failed: ${err.message || err}`);
   }
 
@@ -274,12 +341,21 @@ Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou
   // Step 5: Save analysis JSON to Supabase
   try {
     console.log(`[AI Analyzer] Saving analysis to database (analyses table) for conversation ${conversationId}...`);
+    
+    // Merge the custom criteria evaluation & scores fields into scores JSONB column
+    const scoresData = {
+      ...analysisResult.scores,
+      commercial_quality_score: analysisResult.commercial_quality_score,
+      response_time_score: analysisResult.response_time_score,
+      criteria_evaluation: analysisResult.criteria_evaluation
+    };
+
     const { error: upsertError } = await supabase
       .from('analyses')
       .upsert({
         conversation_id: conversationId,
         overall_score: analysisResult.overall_score,
-        scores: analysisResult.scores,
+        scores: scoresData,
         summary: analysisResult.summary,
         strengths: analysisResult.strengths,
         weaknesses: analysisResult.weaknesses,
@@ -298,5 +374,65 @@ Atenção: Retorne apenas o objeto JSON válido, sem tags markdown adicionais ou
   } catch (err: any) {
     console.error(`[AI Analyzer] Database operation failed when saving analysis for conversation ${conversationId}:`, err);
     throw err;
+  }
+
+  // Step 6: Dispatch WhatsApp Alert if score <= 50 and owner_whatsapp is configured
+  if (analysisResult.overall_score <= 50 && ownerWhatsapp && instanceName) {
+    console.log(`[AI Analyzer] Low score alert triggered (score: ${analysisResult.overall_score}) for organization ${orgName}. Sending alert to: ${ownerWhatsapp}`);
+    try {
+      // 1. Fetch operator name
+      let operatorName = 'Não atribuído';
+      if (operatorId) {
+        const { data: operatorData } = await supabase
+          .from('operators')
+          .select('name')
+          .eq('id', operatorId)
+          .maybeSingle();
+        if (operatorData) {
+          operatorName = operatorData.name;
+        }
+      }
+
+      // 2. Format list of unfulfilled criteria
+      const unfulfilled = (analysisResult.criteria_evaluation || [])
+        .filter((c: any) => c.fulfilled === false)
+        .map((c: any) => `• *${c.item}*: ${c.explanation}`)
+        .join('\n');
+
+      const alertText = `⚠️ *Alerta de Auditoria SupervisIA* ⚠️\n\n` +
+        `Um atendimento foi avaliado com nota comercial baixa!\n\n` +
+        `*Cliente:* ${clientPhone}\n` +
+        `*Atendente Responsável:* ${operatorName}\n` +
+        `*Nota Comercial:* ${analysisResult.overall_score}/100\n\n` +
+        `*Itens do Playbook descumpridos:*\n${unfulfilled || 'Nenhum item comercial explícito listado.'}\n\n` +
+        `*Resumo:* ${analysisResult.summary}\n\n` +
+        `Acesse o painel para auditar o atendimento completo.`;
+
+      // 3. Dispatch alert via Evolution API
+      const cleanPhone = ownerWhatsapp.replace(/[^0-9]/g, '');
+      const evolutionUrl = `${EVOLUTION_API_URL?.replace(/\/$/, '')}/message/sendText/${instanceName}`;
+      
+      console.log(`[AI Analyzer] Sending request to Evolution API URL: ${evolutionUrl}`);
+      const alertResp = await fetch(evolutionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': EVOLUTION_API_KEY || ''
+        },
+        body: JSON.stringify({
+          number: cleanPhone,
+          text: alertText
+        })
+      });
+
+      if (alertResp.ok) {
+        console.log(`[AI Analyzer] WhatsApp alert dispatched successfully to ${cleanPhone}.`);
+      } else {
+        const alertErrText = await alertResp.text();
+        console.error(`[AI Analyzer] Evolution API failed to send alert (status ${alertResp.status}):`, alertErrText);
+      }
+    } catch (alertErr) {
+      console.error('[AI Analyzer] Failed to send low-score WhatsApp alert:', alertErr);
+    }
   }
 }
