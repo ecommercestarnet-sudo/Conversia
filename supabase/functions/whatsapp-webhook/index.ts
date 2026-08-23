@@ -970,8 +970,9 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
     console.error('[AI Analyzer] Error updating debouncing columns:', e)
   }
 
-  // Dispatch WhatsApp Alert if score <= 50 and owner_whatsapp is configured
-  if (analysisResult.overall_score <= 50 && ownerWhatsapp && instanceName) {
+  // Dispatch WhatsApp Alert if score <= 50 and owner_whatsapp is configured (Temporarily disabled)
+  const isAlertEnabled = false
+  if (isAlertEnabled && analysisResult.overall_score <= 50 && ownerWhatsapp && instanceName) {
     const alertSent = convData?.alert_sent || false
     if (alertSent) {
       console.log(`[AI Analyzer] Low score alert already sent for conversation ${conversationId}. Skipping WhatsApp alert dispatch.`)
