@@ -79,14 +79,6 @@ export async function analyzeConversation(conversationId: string, force: boolean
       console.log(`[AI Analyzer] Skipping analysis. Conversation ${conversationId} has only ${messages.length} messages (min 3 required).`);
       return;
     }
-
-    const lastMessage = messages[messages.length - 1];
-    const isSeller = lastMessage.sender_type === 'agent' || lastMessage.sender_type === 'atendente';
-
-    if (!isSeller) {
-      console.log(`[AI Analyzer] Last message in conversation ${conversationId} is from client. Skipping analysis until seller responds.`);
-      return;
-    }
   }
 
   // Step 1.5: Fetch conversation data including debouncing fields
@@ -115,23 +107,6 @@ export async function analyzeConversation(conversationId: string, force: boolean
     }
   } catch (err: any) {
     console.error(`[AI Analyzer] Failed to fetch conversation data for conversation ${conversationId}:`, err);
-  }
-
-  // Step 1.6: Debouncing — prevent rapid re-analysis
-  if (!force) {
-    const newMessagesSinceLast = messages.length - messageCountAtAnalysis;
-    if (newMessagesSinceLast < MIN_NEW_MESSAGES_SINCE_LAST) {
-      console.log(`[AI Analyzer] Debounce: only ${newMessagesSinceLast} new message(s) since last analysis (need ${MIN_NEW_MESSAGES_SINCE_LAST}). Skipping.`);
-      return;
-    }
-
-    if (lastAnalyzedAt) {
-      const elapsed = Date.now() - new Date(lastAnalyzedAt).getTime();
-      if (elapsed < DEBOUNCE_INTERVAL_MS) {
-        console.log(`[AI Analyzer] Debounce: only ${Math.round(elapsed / 1000)}s since last analysis (need ${DEBOUNCE_INTERVAL_MS / 1000}s). Skipping.`);
-        return;
-      }
-    }
   }
 
   let playbook = null;
@@ -512,14 +487,41 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
 
   console.log(`[AI Analyzer] Final deterministic score for conversation ${conversationId}: ${calculatedScore}/100`);
 
+  // Helper for category scores
+  const getCategoryScore = (criterios: any[], keywords: string[], defaultValue = 100) => {
+    let points = 0;
+    let total = 0;
+    criterios.forEach((c: any) => {
+      const name = String(c.nome_criterio || '').toLowerCase();
+      if (keywords.some(kw => name.includes(kw))) {
+        const status = String(c.status || 'N_A').toUpperCase().trim();
+        if (status !== 'N_A') {
+          total += 1;
+          if (status === 'CUMPRIDO') points += 1.0;
+          else if (status === 'PARCIAL') points += 0.5;
+        }
+      }
+    });
+    return total > 0 ? Math.round((points / total) * 100) : defaultValue;
+  };
+
+  const empathyScore = getCategoryScore(analysisResult.criterios || [], ['empatia', 'empathy', 'saudação', 'saudacao', 'educação', 'educacao', 'gentileza', 'cordial'], 100);
+  const investigationScore = getCategoryScore(analysisResult.criterios || [], ['investigação', 'investigacao', 'investigar', 'pergunta', 'rotina', 'histórico', 'historico', 'metas', 'objetivo', 'dor'], 100);
+  const closingScore = getCategoryScore(analysisResult.criterios || [], ['fechamento', 'closing', 'visita', 'experimental', 'agenda', 'condução', 'conducao', 'chamada', 'cta', 'controle'], 100);
+  const responseTimeScore = typeof analysisResult.response_time_score === 'number' ? analysisResult.response_time_score : 100;
+
   // Step 5: Save analysis JSON to Supabase
   try {
     console.log(`[AI Analyzer] Saving analysis to database (analyses table) for conversation ${conversationId}...`);
     
     // Merge the custom criteria evaluation & scores fields into scores JSONB column
     const scoresData = {
+      empathy: empathyScore,
+      investigation: investigationScore,
+      closing: closingScore,
+      response_time: responseTimeScore,
       commercial_quality_score: analysisResult.commercial_quality_score,
-      response_time_score: analysisResult.response_time_score,
+      response_time_score: responseTimeScore,
       criterios: analysisResult.criterios,
       criteria_evaluation: analysisResult.criterios, // backward compatibility
       _raciocinio_previo: analysisResult._raciocinio_previo,

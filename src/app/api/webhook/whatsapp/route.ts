@@ -251,20 +251,43 @@ export async function POST(request: NextRequest) {
 
     // Save the message
     const senderType = fromMe ? 'agent' : 'client';
-    const { error: msgError } = await supabase
+    const { data: insertedMsg, error: msgError } = await supabase
       .from('messages')
       .insert({
         conversation_id: conversationId,
         sender_type: senderType,
         content: content,
-      });
+      })
+      .select('id')
+      .maybeSingle();
 
     if (msgError) {
       console.error('Error inserting message into Supabase:', msgError);
       throw msgError;
     }
 
+    const insertedId = insertedMsg?.id;
+
     console.log(`Message successfully saved. Conversation ID: ${conversationId}, Sender Type: ${senderType}`);
+
+    // Wait 4 seconds to accumulate message bursts
+    await new Promise(resolve => setTimeout(resolve, 4000));
+
+    // Check if a newer message has been saved in the meantime
+    if (insertedId) {
+      const { data: latestMsg } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestMsg && latestMsg.id !== insertedId) {
+        console.log(`[AI Analyzer] Newer message ${latestMsg.id} exists in DB. Skipping analysis for message ${insertedId}.`);
+        return NextResponse.json({ success: true, message: 'Skipped analysis: newer message exists.' }, { status: 200 });
+      }
+    }
 
     // Execute analyzeConversation (internal gates handle debouncing, min messages, last sender check)
     console.log(`Executing AI analysis for conversation ID: ${conversationId}`);
