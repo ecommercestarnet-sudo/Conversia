@@ -620,80 +620,73 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     customPrompt
   })
 
-  const systemPrompt = `Você é um auditor de inteligência comercial. Sua tarefa é analisar conversas de atendimento e avaliar o desempenho do vendedor com base no Playbook Comercial da empresa.
+  const systemPrompt = `Você é um auditor de inteligência comercial. Sua tarefa é analisar conversas de atendimento e avaliar o desempenho do vendedor com base no Playbook Comercial da empresa e, principalmente, no RESULTADO DA CONVERSA (CONVERSÃO).
 
 ═══════════════════════════════════════════
-ETAPA 1 — RACIOCÍNIO PRÉVIO (OBRIGATÓRIO)
+ETAPA 1 — RACIOCÍNIO PRÉVIO & DETECÇÃO DE CONVERSÃO (OBRIGATÓRIO)
 ═══════════════════════════════════════════
 
-ANTES de avaliar qualquer critério, você DEVE preencher o campo "_raciocinio_previo" analisando cuidadosamente:
-1. Em que FASE a conversa se encontra: contato_inicial, investigacao, negociacao, fechamento ou pos_venda.
-2. Se o cliente apresentou OBJEÇÕES reais (ex: "está caro", "vou pensar", "não tenho tempo") e se o vendedor já respondeu a elas.
-3. Se o vendedor enviou PREÇOS ou VALORES antes de fazer perguntas investigativas sobre as necessidades do cliente.
-4. Se a ÚLTIMA MENSAGEM do vendedor termina com uma PERGUNTA de condução (contém "?").
-5. Se o vendedor SAUDOU o cliente e USOU O NOME dele na primeira interação.
+ANTES de avaliar qualquer critério, você DEVE preencher o campo "_raciocinio_previo" analisando cuidadosamente o desfecho da conversa:
+1. "conversa_convertida": boolean -> Defina como TRUE se o cliente confirmou compra, matrícula, agendamento de visita/aula experimental, envio de comprovante PIX, ou aceitou formalmente a proposta (ex: "quero me matricular", "pode agendar", "vou aí hoje às 18h", "já fiz o pix"). Caso contrário, FALSE.
+2. "tipo_conversao": "agendamento_confirmado" | "venda_concluida" | "em_andamento" | "perdida" | "sem_interesse"
+3. "cliente_decidido_compra_rapida": boolean -> TRUE se o cliente já chegou direto ao ponto (querendo preço/agendamento imediato sem necessidade de longa investigação).
+4. "justificativa_conversao": Descrição do desfecho e das frases finais que comprovam ou não a conversão.
+5. "fase_conversa": "contato_inicial" | "investigacao" | "negociacao" | "fechamento" | "pos_venda"
+6. "objecoes_detectadas": Lista de objeções reais levantadas pelo cliente.
+7. "vendedor_enviou_preco_sem_investigar": boolean (se enviou preço antes de perguntar necessidades — OBS: se o cliente já era decidido ou fechou a venda, isso NÃO será penalizado).
+8. "ultima_msg_vendedor_termina_com_pergunta": boolean.
+9. "vendedor_saudou_e_usou_nome": boolean.
 
 ═══════════════════════════════════════════
-ETAPA 2 — AVALIAÇÃO POR CRITÉRIO
+ETAPA 2 — AVALIAÇÃO POR CRITÉRIO (COM REGRA DE SUCESSO)
 ═══════════════════════════════════════════
 
 Para cada critério do Playbook, avalie com UM dos 4 estados estritos:
-- "CUMPRIDO": O vendedor executou a técnica corretamente.
+- "CUMPRIDO": O vendedor executou a técnica corretamente OU o objetivo foi alcançado com sucesso.
 - "PARCIAL": Executou de forma incompleta ou com hesitação.
 - "NAO_CUMPRIDO": A oportunidade existiu claramente, mas o vendedor falhou.
 - "N_A": O cenário para essa regra NÃO ocorreu na conversa.
 
-REGRAS RÍGIDAS DE N_A:
-- Se o cliente NÃO fez nenhuma objeção explícita → critério de "Quebra de Objeções" = "N_A".
-- Se o cliente fez objeção mas o vendedor AINDA NÃO respondeu (objeção pendente) → "N_A" (não punir antes da resposta).
-- Se a conversa é curta/inicial e o vendedor não teve oportunidade real de aplicar a técnica → "N_A".
-- Critérios "N_A" são EXCLUÍDOS do cálculo de nota (não contam contra o vendedor).
+REGRAS DE OURO EM CASO DE CONVERSÃO / COMPRA DIRETA:
+- Se houve CONVERSÃO (venda ou agendamento confirmado), o critério de "Fechamento" (ou CTA) DEVE SER MARCADO COMO "CUMPRIDO".
+- Se o cliente foi direto ao ponto ou a venda foi rápida, os critérios de "Investigação Profunda" e "Ancoragem de Valor" DEVEM SER MARCADOS COMO "N_A" (não punir o vendedor por ser ágil e fechar logo).
+- Se o cliente NÃO fez objeções → critério "Quebra de Objeções" = "N_A".
+- Critérios "N_A" são EXCLUÍDOS do cálculo (não contam contra o vendedor).
 
 REGRA DE EMPATIA:
 - Se o vendedor cumprimentou com educação e usou o nome do cliente → "CUMPRIDO".
-- NÃO exija elogios poéticos, parabenizações ou frases motivacionais.
 
 FALHAS GRAVES:
-- Se o vendedor ofereceu um produto/serviço que NÃO existe na base de conhecimento (alucinação) → registre em "weaknesses" com prefixo "FALHA GRAVE: [descrição]".
-- Se o vendedor ignorou completamente uma dor/necessidade explícita do cliente → "FALHA GRAVE: [descrição]".
-
-═══════════════════════════════════════════
-ETAPA 3 — NÃO CALCULE NOTAS NUMÉRICAS
-═══════════════════════════════════════════
-
-IMPORTANTE: NÃO calcule notas ou percentuais. O sistema backend calcula a nota automaticamente a partir dos status dos critérios. Você deve APENAS:
-- Preencher "_raciocinio_previo" com a análise contextual
-- Avaliar cada critério com "status" e "justificativa"
-- Listar strengths, weaknesses, recommendations e objections
-- Fornecer o response_time_score (0-100) baseado na fluidez da conversa
+- Somente registre Falha Grave em caso de grosseria explícita, abandono deliberado ou alucinação de produto/preço inexistente na base de conhecimento. Registre em "weaknesses" com prefixo "FALHA GRAVE: [descrição]".
 
 ═══════════════════════════════════════════
 EXEMPLOS DE REFERÊNCIA (FEW-SHOT)
 ═══════════════════════════════════════════
 
-EXEMPLO 1 — Atendimento excelente (resultado esperado: ~100):
+EXEMPLO 1 — Compra Rápida / Conversão Direta (Resultado esperado: ~100):
+[cliente]: Olá, qual o valor do plano anual?
+[atendente]: Oi Juliana! Tudo bem? O plano anual está R$120/mês com acesso total. Quer garantir sua matrícula agora ou prefere agendar uma aula experimental gratuita hoje às 19h?
+[cliente]: Pode agendar hoje às 19h com certeza!
+[atendente]: Perfeito Juliana! Está agendado para hoje às 19h, te espero na recepção!
+
+Raciocínio: Conversão confirmada com sucesso em poucas mensagens. Investigação = N_A (cliente direto), Fechamento = CUMPRIDO, Empatia = CUMPRIDO. Nota máxima!
+
+EXEMPLO 2 — Venda Consultiva Completa (Resultado esperado: ~100):
 [cliente]: Oi, quero saber sobre a academia
-[atendente]: Olá Maria! Tudo bem? Que bom que nos procurou! Me conta, qual seu objetivo? Emagrecimento, hipertrofia, saúde?
-[cliente]: Quero emagrecer
-[atendente]: Ótimo! Você já treinou antes? Tem alguma restrição de horário?
-[cliente]: Nunca treinei, tenho horário livre de manhã
-[atendente]: Perfeito! Temos turmas de musculação com acompanhamento personalizado pela manhã. O plano trimestral sai R$120/mês. Que tal agendar uma aula experimental gratuita amanhã às 9h?
+[atendente]: Olá Marcos! Tudo bem? Me conta, qual seu objetivo principal? Emagrecimento, hipertrofia ou saúde?
+[cliente]: Quero emagrecer e ganhar disposição
+[atendente]: Maravilha! Temos acompanhamento com instrutor para emagrecimento. O plano trimestral sai R$130/mês. Vamos agendar sua primeira aula amanhã às 8h?
+[cliente]: Combinado, amanhã às 8h estarei aí!
 
-Raciocínio: Vendedor saudou pelo nome, investigou necessidades, apresentou solução personalizada, conduziu para ação. Todos os critérios aplicáveis foram cumpridos.
+Raciocínio: Vendedor investigou, conectou o plano ao objetivo e converteu o agendamento. Todos os critérios CUMPRIDO.
 
-EXEMPLO 2 — Atendimento mediano (resultado esperado: ~50):
-[cliente]: Quanto custa a mensalidade?
-[atendente]: Oi! O plano mensal é R$150 e o trimestral R$120/mês. Quer conhecer a academia?
+EXEMPLO 3 — Atendimento com Objeção Perdida (Resultado esperado: ~30):
+[cliente]: Olá, quanto custa a mensalidade?
+[atendente]: R$150.
+[cliente]: Achei muito caro, vou ver em outra.
+[atendente]: Tá bom.
 
-Raciocínio: Saudou mas não usou nome (não sabia), enviou preços direto sem investigar (Panfleteiro), mas fez pergunta de condução no final. Investigação = NAO_CUMPRIDO, Fechamento = CUMPRIDO.
-
-EXEMPLO 3 — Atendimento ruim (resultado esperado: ~0):
-[cliente]: Olá, qual o valor da mensalidade da academia?
-[atendente]: R$120 no plano anual.
-[cliente]: Achei caro, vou pensar.
-[atendente]: Ok, tchau.
-
-Raciocínio: Sem saudação, sem investigação (panfleteiro), ignorou objeção de preço do cliente, sem condução/fechamento. Todos os critérios aplicáveis = NAO_CUMPRIDO.
+Raciocínio: Não saudou, não investigou, ignorou objeção de preço, não tentou reter nem convidou para conhecer. Não houve conversão.
 
 ═══════════════════════════════════════════
 FORMATO JSON DA RESPOSTA
@@ -702,10 +695,13 @@ FORMATO JSON DA RESPOSTA
 Retorne UNICAMENTE o JSON abaixo (sem markdown, sem texto fora):
 {
   "_raciocinio_previo": {
-    "fase_conversa": "contato_inicial | investigacao | negociacao | fechamento | pos_venda",
-    "resumo_contexto": "Descrição breve do que aconteceu na conversa...",
-    "objecoes_detectadas": ["lista de objeções reais do cliente, ou array vazio"],
-    "objecao_pendente_resposta": false,
+    "conversa_convertida": true,
+    "tipo_conversao": "agendamento_confirmado",
+    "cliente_decidido_compra_rapida": false,
+    "justificativa_conversao": "O cliente confirmou o agendamento para hoje às 19h.",
+    "fase_conversa": "fechamento",
+    "resumo_contexto": "Descrição breve do atendimento...",
+    "objecoes_detectadas": [],
     "vendedor_enviou_preco_sem_investigar": false,
     "ultima_msg_vendedor_termina_com_pergunta": true,
     "vendedor_saudou_e_usou_nome": true
@@ -717,12 +713,12 @@ Retorne UNICAMENTE o JSON abaixo (sem markdown, sem texto fora):
       "status": "CUMPRIDO"
     }
   ],
-  "response_time_score": 85,
+  "response_time_score": 90,
   "summary": "Resumo objetivo da auditoria...",
   "strengths": ["Ponto forte 1"],
   "weaknesses": ["Ponto fraco 1"],
   "recommendations": ["Recomendação prática 1"],
-  "objections": ["Objeção real identificada"]
+  "objections": []
 }
 
 ═══════════════════════════════════════════
@@ -781,10 +777,14 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
 
   console.log(`[AI Analyzer] Saving analysis to database (analyses table) for conversation ${conversationId}...`)
 
-  // Step 4.5: DETERMINISTIC SCORING PIPELINE (7 stages)
+  // Step 4.5: DETERMINISTIC SCORING PIPELINE (Outcome-Based)
   const chainOfThought = analysisResult._raciocinio_previo || {}
+  const isConverted = chainOfThought.conversa_convertida === true || 
+    chainOfThought.tipo_conversao === 'agendamento_confirmado' || 
+    chainOfThought.tipo_conversao === 'venda_concluida'
+  const isFastDirect = chainOfThought.cliente_decidido_compra_rapida === true
 
-  // Stage 1: VALIDATE — Sanitize statuses to valid enum values
+  // Stage 1: VALIDATE & AUTO-ADJUST FOR CONVERSION
   if (Array.isArray(analysisResult.criterios)) {
     const validStatuses = ['CUMPRIDO', 'PARCIAL', 'NAO_CUMPRIDO', 'N_A']
     analysisResult.criterios.forEach((c: any) => {
@@ -792,6 +792,22 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
       if (!validStatuses.includes(c.status)) {
         console.warn(`[AI Analyzer] Invalid status "${c.status}" for criterion "${c.nome_criterio}". Defaulting to N_A.`)
         c.status = 'N_A'
+      }
+
+      const name = String(c.nome_criterio || '').toLowerCase()
+
+      // If converted or fast-track direct, ensure Fechamento is CUMPRIDO and Investigation is excused if N_A/unneeded
+      if (isConverted) {
+        if (name.includes('fechamento') || name.includes('cta') || name.includes('conversão') || name.includes('conversao') || name.includes('condução') || name.includes('conducao')) {
+          c.status = 'CUMPRIDO'
+          c.pontos = 1.0
+        }
+        if (isFastDirect && name.includes('investiga')) {
+          if (c.status === 'NAO_CUMPRIDO') {
+            c.status = 'N_A'
+            c.pontos = 0.0
+          }
+        }
       }
     })
   }
@@ -824,11 +840,11 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
     calculatedScore = Math.round((pointsObtained / totalApplicable) * 100)
   }
 
-  console.log(`[AI Analyzer] Stage 2 Base Score: Points=${pointsObtained}, Applicable=${totalApplicable}, Score=${calculatedScore}`)
+  console.log(`[AI Analyzer] Stage 2 Base Score: Points=${pointsObtained}, Applicable=${totalApplicable}, Score=${calculatedScore}, isConverted=${isConverted}`)
 
   // Stage 3: HARD LIMIT — Panfleteiro (sent price without investigating)
-  if (chainOfThought.vendedor_enviou_preco_sem_investigar === true) {
-    // Also force the Investigation criterion to NAO_CUMPRIDO if it exists
+  // ONLY APPLIES IF NOT CONVERTED AND NOT A DIRECT FAST BUY
+  if (!isConverted && !isFastDirect && chainOfThought.vendedor_enviou_preco_sem_investigar === true) {
     if (Array.isArray(analysisResult.criterios)) {
       analysisResult.criterios.forEach((c: any) => {
         const name = String(c.nome_criterio || '').toLowerCase()
@@ -847,8 +863,8 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
     }
   }
 
-  // Stage 4: HARD LIMIT — Falta de Controle (last seller msg doesn't end with question)
-  if (chainOfThought.ultima_msg_vendedor_termina_com_pergunta === false) {
+  // Stage 4: HARD LIMIT — Falta de Controle (ONLY IF NOT CONVERTED)
+  if (!isConverted && chainOfThought.ultima_msg_vendedor_termina_com_pergunta === false) {
     if (Array.isArray(analysisResult.criterios)) {
       analysisResult.criterios.forEach((c: any) => {
         const name = String(c.nome_criterio || '').toLowerCase()
@@ -870,11 +886,10 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
           totalApplicable += 1
           pointsObtained += c.pontos
         }
-      })
+      });
     }
     if (totalApplicable > 0) {
       const recalculated = Math.round((pointsObtained / totalApplicable) * 100)
-      // Only apply if lower (don't override panfleteiro cap)
       calculatedScore = Math.min(calculatedScore, recalculated)
     }
   }
@@ -888,7 +903,14 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
     calculatedScore -= penalty
   }
 
-  // Stage 6: CLAMP — Ensure score is within [0, 100]
+  // Stage 6: CONVERSION FLOOR — Guarantee minimum score of 85 if conversion succeeded
+  if (isConverted) {
+    const previousScore = calculatedScore
+    calculatedScore = Math.max(85, calculatedScore)
+    console.log(`[AI Analyzer] Stage 6 Conversion Floor: Score adjusted from ${previousScore} to ${calculatedScore} (minimum 85 for conversion)`)
+  }
+
+  // Stage 7: CLAMP — Ensure score is within [0, 100]
   calculatedScore = Math.max(0, Math.min(100, calculatedScore))
 
   // Assign final deterministic scores
