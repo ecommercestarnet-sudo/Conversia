@@ -266,8 +266,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`Message successfully saved. Conversation ID: ${conversationId}, Sender Type: ${senderType}`);
 
-    // Execute analyzeConversation synchronously
-    console.log(`Executing AI analysis synchronously for conversation ID: ${conversationId}`);
+    // Execute analyzeConversation (internal gates handle debouncing, min messages, last sender check)
+    console.log(`Executing AI analysis for conversation ID: ${conversationId}`);
     await analyzeConversation(String(conversationId));
 
     if (orgSlug) {
