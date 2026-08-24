@@ -17,7 +17,7 @@ export default async function SettingsPage({ params }: PageProps) {
   // 1. Fetch organization by slug
   const { data: org, error: orgError } = await supabase
     .from('organizations')
-    .select('id, name, slug, evolution_instance_name, whatsapp_status, owner_whatsapp')
+    .select('id, name, slug, evolution_instance_name, whatsapp_status, owner_whatsapp, owner_name')
     .eq('slug', tenant_slug)
     .maybeSingle();
 

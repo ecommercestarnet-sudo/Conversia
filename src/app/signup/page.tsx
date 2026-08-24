@@ -16,24 +16,13 @@ export default function SignupPage({
         <form className="mt-8 space-y-6" action={signup}>
           <div className="space-y-4 rounded-md shadow-sm">
             <div>
-              <label htmlFor="companyName" className="sr-only">Nome da Empresa</label>
-              <input
-                id="companyName"
-                name="companyName"
-                type="text"
-                required
-                className="relative block w-full rounded-t-md border-0 py-1.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm sm:leading-6 px-3"
-                placeholder="Nome da Empresa"
-              />
-            </div>
-            <div>
               <label htmlFor="email" className="sr-only">E-mail</label>
               <input
                 id="email"
                 name="email"
                 type="email"
                 required
-                className="relative block w-full rounded-none border-0 py-1.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm sm:leading-6 px-3"
+                className="relative block w-full rounded-t-md border-0 py-1.5 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm sm:leading-6 px-3"
                 placeholder="E-mail"
               />
             </div>

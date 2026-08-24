@@ -25,6 +25,7 @@ interface Company {
   id: string;
   name: string;
   owner_whatsapp: string | null;
+  owner_name: string | null;
 }
 
 interface Operator {
@@ -62,6 +63,8 @@ export default function SettingsClient({ company, initialOperators, lastStatusLo
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Form states - Company Settings
+  const [companyName, setCompanyName] = useState(company?.name || '');
+  const [ownerName, setOwnerName] = useState(company?.owner_name || '');
   const [ownerWhatsapp, setOwnerWhatsapp] = useState(company?.owner_whatsapp || '');
 
   // Form states - Operator
@@ -94,6 +97,8 @@ export default function SettingsClient({ company, initialOperators, lastStatusLo
 
     const result = await saveCompanySettings({
       company_id: company.id,
+      name: companyName.trim(),
+      owner_name: ownerName.trim(),
       owner_whatsapp: cleanedPhone
     });
 
@@ -102,6 +107,7 @@ export default function SettingsClient({ company, initialOperators, lastStatusLo
     if (result.success) {
       setNotification({ type: 'success', message: 'Configurações da empresa salvas com sucesso!' });
       router.refresh();
+      window.location.reload();
       setTimeout(() => setNotification(null), 4000);
     } else {
       setNotification({ type: 'error', message: `Erro ao salvar: ${result.error}` });
@@ -284,7 +290,7 @@ export default function SettingsClient({ company, initialOperators, lastStatusLo
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm max-w-xl">
             <h2 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
               <Building className="w-4 h-4 text-emerald-600" />
-              WhatsApp do Gestor
+              Configurações da Empresa
             </h2>
 
             {!isAdmin ? (
@@ -296,7 +302,40 @@ export default function SettingsClient({ company, initialOperators, lastStatusLo
               <form onSubmit={handleSaveCompany} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    WhatsApp para Recebimento de Alertas
+                    Nome da Empresa
+                  </label>
+                  <div className="relative">
+                    <Building className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Minha Empresa"
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    Nome do Gestor
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Ex: Carlos Silva"
+                      value={ownerName}
+                      onChange={(e) => setOwnerName(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    WhatsApp do Gestor (Alertas)
                   </label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />

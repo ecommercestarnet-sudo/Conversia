@@ -5,6 +5,8 @@ import { revalidatePath } from 'next/cache';
 
 export interface CompanySettingsData {
   company_id: string;
+  name: string;
+  owner_name?: string;
   owner_whatsapp: string;
 }
 
@@ -21,12 +23,19 @@ export async function saveCompanySettings(data: CompanySettingsData) {
     if (!data.company_id) {
       return { success: false, error: 'ID da organização é obrigatório.' };
     }
+    if (!data.name?.trim()) {
+      return { success: false, error: 'Nome da empresa é obrigatório.' };
+    }
 
     const supabase = await createClient();
 
     const { error } = await supabase
       .from('organizations')
-      .update({ owner_whatsapp: data.owner_whatsapp || null })
+      .update({ 
+        name: data.name.trim(),
+        owner_name: data.owner_name?.trim() || null,
+        owner_whatsapp: data.owner_whatsapp || null 
+      })
       .eq('id', data.company_id);
 
     if (error) {
