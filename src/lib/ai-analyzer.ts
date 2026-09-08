@@ -221,19 +221,26 @@ export async function analyzeConversation(conversationId: string, force: boolean
   const systemPrompt = `Você é um auditor de inteligência comercial. Sua tarefa é analisar conversas de atendimento e avaliar o desempenho do vendedor com base no Playbook Comercial da empresa e, principalmente, no RESULTADO DA CONVERSA (CONVERSÃO).
 
 ═══════════════════════════════════════════
-ETAPA 1 — RACIOCÍNIO PRÉVIO & DETECÇÃO DE CONVERSÃO (OBRIGATÓRIO)
+ETAPA 1 — DIAGNÓSTICO COMERCIAL & DETECÇÃO DE RISCO/PERDA (OBRIGATÓRIO)
 ═══════════════════════════════════════════
 
-ANTES de avaliar qualquer critério, você DEVE preencher o campo "_raciocinio_previo" analisando cuidadosamente o desfecho da conversa:
-1. "conversa_convertida": boolean -> Defina como TRUE se o cliente confirmou compra, matrícula, agendamento de visita/aula experimental, envio de comprovante PIX, ou aceitou formalmente a proposta (ex: "quero me matricular", "pode agendar", "vou aí hoje às 18h", "já fiz o pix"). Caso contrário, FALSE.
-2. "tipo_conversao": "agendamento_confirmado" | "venda_concluida" | "em_andamento" | "perdida" | "sem_interesse"
-3. "cliente_decidido_compra_rapida": boolean -> TRUE se o cliente já chegou direto ao ponto (querendo preço/agendamento imediato sem necessidade de longa investigação).
-4. "justificativa_conversao": Descrição do desfecho e das frases finais que comprovam ou não a conversão.
-5. "fase_conversa": "contato_inicial" | "investigacao" | "negociacao" | "fechamento" | "pos_venda"
-6. "objecoes_detectadas": Lista de objeções reais levantadas pelo cliente.
-7. "vendedor_enviou_preco_sem_investigar": boolean (se enviou preço antes de perguntar necessidades — OBS: se o cliente já era decidido ou fechou a venda, isso NÃO será penalizado).
-8. "ultima_msg_vendedor_termina_com_pergunta": boolean.
-9. "vendedor_saudou_e_usou_nome": boolean.
+ANTES de avaliar qualquer critério, você DEVE analisar o desfecho comercial e o risco da negociação:
+1. "conversa_convertida": boolean -> TRUE se o cliente confirmou compra, matrícula, agendamento de visita/aula experimental, pagamento PIX ou aceitou formalmente a proposta comercial.
+2. "status_comercial": "convertida" | "em_risco" | "perdida" | "em_andamento"
+   - "convertida": Fechamento ou agendamento confirmado com sucesso.
+   - "em_risco": Lead demonstrou interesse, mas está há horas sem resposta do vendedor, houve esfriamento após envio de preço seco, ou o cliente ficou com dúvida não sanada.
+   - "perdida": Cliente declarou desistência ("muito caro", "fechei com outro", "não tenho interesse") OU vendedor abandonou o atendimento/falhou completamente.
+   - "em_andamento": Conversa ativa fluindo normalmente no funil.
+3. "motivo_perda": Se status for "perdida" ou "em_risco", especifique em 1 frase curta e objetiva o motivo principal (Ex: "Preço enviado sem qualificação prévia", "Demora excessiva na resposta", "Não tratou objeção de valor", "Não fez chamada para ação/fechamento"). Se convertida ou em andamento saudável, use null.
+4. "acao_resgate_sugerida": Se status for "perdida" ou "em_risco", forneça uma sugestão prática e direta de mensagem que o vendedor ou gestor pode mandar agora para reativar o lead. Se convertida, parabenize ou sugira próximo passo de boas-vindas.
+5. "tipo_conversao": "agendamento_confirmado" | "venda_concluida" | "em_andamento" | "perdida" | "sem_interesse"
+6. "cliente_decidido_compra_rapida": boolean (se cliente já veio direto querendo fechar/agendar sem precisar de longa investigação).
+7. "justificativa_conversao": Descrição do desfecho e das frases finais.
+8. "fase_conversa": "contato_inicial" | "investigacao" | "negociacao" | "fechamento" | "pos_venda"
+9. "objecoes_detectadas": Lista de objeções reais levantadas pelo cliente.
+10. "vendedor_enviou_preco_sem_investigar": boolean.
+11. "ultima_msg_vendedor_termina_com_pergunta": boolean.
+12. "vendedor_saudou_e_usou_nome": boolean.
 
 ═══════════════════════════════════════════
 ETAPA 2 — AVALIAÇÃO POR CRITÉRIO (COM REGRA DE SUCESSO)
@@ -267,7 +274,7 @@ EXEMPLO 1 — Compra Rápida / Conversão Direta (Resultado esperado: ~100):
 [cliente]: Pode agendar hoje às 19h com certeza!
 [atendente]: Perfeito Juliana! Está agendado para hoje às 19h, te espero na recepção!
 
-Raciocínio: Conversão confirmada com sucesso em poucas mensagens. Investigação = N_A (cliente direto), Fechamento = CUMPRIDO, Empatia = CUMPRIDO. Nota máxima!
+Raciocínio: Conversão confirmada com sucesso em poucas mensagens. status_comercial = "convertida", motivo_perda = null. Nota máxima!
 
 EXEMPLO 2 — Venda Consultiva Completa (Resultado esperado: ~100):
 [cliente]: Oi, quero saber sobre a academia
@@ -276,15 +283,15 @@ EXEMPLO 2 — Venda Consultiva Completa (Resultado esperado: ~100):
 [atendente]: Maravilha! Temos acompanhamento com instrutor para emagrecimento. O plano trimestral sai R$130/mês. Vamos agendar sua primeira aula amanhã às 8h?
 [cliente]: Combinado, amanhã às 8h estarei aí!
 
-Raciocínio: Vendedor investigou, conectou o plano ao objetivo e converteu o agendamento. Todos os critérios CUMPRIDO.
+Raciocínio: Vendedor investigou, conectou o plano ao objetivo e converteu o agendamento. status_comercial = "convertida".
 
-EXEMPLO 3 — Atendimento com Objeção Perdida (Resultado esperado: ~30):
+EXEMPLO 3 — Atendimento com Venda Perdida por Envio de Preço Seco (Resultado esperado: ~30):
 [cliente]: Olá, quanto custa a mensalidade?
 [atendente]: R$150.
 [cliente]: Achei muito caro, vou ver em outra.
 [atendente]: Tá bom.
 
-Raciocínio: Não saudou, não investigou, ignorou objeção de preço, não tentou reter nem convidou para conhecer. Não houve conversão.
+Raciocínio: status_comercial = "perdida", motivo_perda = "Enviou preço sem qualificação e não contornou objeção de valor", acao_resgate_sugerida = "Entrar em contato oferecendo uma aula experimental sem compromisso para apresentar a estrutura e benefícios exclusivos".
 
 ═══════════════════════════════════════════
 FORMATO JSON DA RESPOSTA
@@ -294,6 +301,9 @@ Retorne UNICAMENTE o JSON abaixo (sem markdown, sem texto fora):
 {
   "_raciocinio_previo": {
     "conversa_convertida": true,
+    "status_comercial": "convertida",
+    "motivo_perda": null,
+    "acao_resgate_sugerida": "Confirmar agendamento e enviar localização.",
     "tipo_conversao": "agendamento_confirmado",
     "cliente_decidido_compra_rapida": false,
     "justificativa_conversao": "O cliente confirmou o agendamento para hoje às 19h.",
@@ -536,6 +546,12 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
   try {
     console.log(`[AI Analyzer] Saving analysis to database (analyses table) for conversation ${conversationId}...`);
     
+    // Extract commercial loss diagnosis
+    const raciocinio = analysisResult._raciocinio_previo || {};
+    const statusComercial = raciocinio.status_comercial || (analysisResult.overall_score >= 80 ? 'convertida' : analysisResult.overall_score <= 50 ? 'perdida' : 'em_risco');
+    const motivoPerda = raciocinio.motivo_perda || (analysisResult.weaknesses && analysisResult.weaknesses.length > 0 ? analysisResult.weaknesses[0] : null);
+    const acaoResgate = raciocinio.acao_resgate_sugerida || (analysisResult.recommendations && analysisResult.recommendations.length > 0 ? analysisResult.recommendations[0] : null);
+
     // Merge the custom criteria evaluation & scores fields into scores JSONB column
     const scoresData = {
       empathy: empathyScore,
@@ -547,6 +563,9 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
       criterios: analysisResult.criterios,
       criteria_evaluation: analysisResult.criterios, // backward compatibility
       _raciocinio_previo: analysisResult._raciocinio_previo,
+      status_comercial: statusComercial,
+      motivo_perda: motivoPerda,
+      acao_resgate_sugerida: acaoResgate,
     };
 
     const { error: upsertError } = await supabase

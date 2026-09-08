@@ -36,6 +36,11 @@ interface Analysis {
     response_time: number;
     investigation: number;
     closing: number;
+    status_comercial?: 'convertida' | 'em_risco' | 'perdida' | 'em_andamento';
+    motivo_perda?: string | null;
+    acao_resgate_sugerida?: string | null;
+    _raciocinio_previo?: any;
+    criterios?: any[];
   };
   summary: string;
   strengths: string[];
@@ -88,6 +93,7 @@ export default function DashboardClient({ initialConversations, organization, la
 
   const [searchTerm, setSearchTerm] = useState('');
   const [operatorFilter, setOperatorFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'em_risco' | 'perdida' | 'convertida'>('all');
   const [selectedId, setSelectedId] = useState<string | number | null>(
     initialConversations.length > 0 ? initialConversations[0].id : null
   );
@@ -116,11 +122,48 @@ export default function DashboardClient({ initialConversations, organization, la
     return conv.analyses;
   };
 
+  // Extract commercial status helper
+  const getCommercialStatus = (conv: Conversation): {
+    status: 'convertida' | 'em_risco' | 'perdida' | 'em_andamento';
+    motivo: string | null;
+    acao: string | null;
+  } => {
+    const analysis = getAnalysis(conv);
+    if (!analysis) {
+      return { status: 'em_andamento', motivo: null, acao: null };
+    }
+
+    const scores = analysis.scores || {};
+    const raciocinio = scores._raciocinio_previo || {};
+
+    let status: 'convertida' | 'em_risco' | 'perdida' | 'em_andamento' = 
+      scores.status_comercial || 
+      raciocinio.status_comercial || 
+      (raciocinio.conversa_convertida ? 'convertida' : 
+       analysis.overall_score >= 80 ? 'convertida' : 
+       analysis.overall_score <= 50 ? 'perdida' : 'em_risco');
+
+    let motivo: string | null = 
+      scores.motivo_perda || 
+      raciocinio.motivo_perda || 
+      (analysis.weaknesses && analysis.weaknesses.length > 0 ? analysis.weaknesses[0] : null);
+
+    let acao: string | null = 
+      scores.acao_resgate_sugerida || 
+      raciocinio.acao_resgate_sugerida || 
+      (analysis.recommendations && analysis.recommendations.length > 0 ? analysis.recommendations[0] : null);
+
+    return { status, motivo, acao };
+  };
+
   // Calculations & Metrics
   const metrics = useMemo(() => {
     let totalScore = 0;
     let analyzedCount = 0;
-    const objectionCounts: Record<string, number> = {};
+    let emRiscoCount = 0;
+    let perdidasCount = 0;
+    let convertidasCount = 0;
+    const lossReasonCounts: Record<string, number> = {};
 
     initialConversations.forEach(conv => {
       const analysis = getAnalysis(conv);
@@ -128,33 +171,38 @@ export default function DashboardClient({ initialConversations, organization, la
         analyzedCount++;
         totalScore += analysis.overall_score;
 
-        if (Array.isArray(analysis.objections)) {
-          analysis.objections.forEach(obj => {
-            if (obj && typeof obj === 'string') {
-              const normalized = obj.trim();
-              objectionCounts[normalized] = (objectionCounts[normalized] || 0) + 1;
-            }
-          });
+        const { status, motivo } = getCommercialStatus(conv);
+        if (status === 'em_risco') emRiscoCount++;
+        else if (status === 'perdida') {
+          perdidasCount++;
+          if (motivo) {
+            const cleanMotivo = motivo.replace(/^FALHA GRAVE:\s*/i, '').trim();
+            lossReasonCounts[cleanMotivo] = (lossReasonCounts[cleanMotivo] || 0) + 1;
+          }
         }
+        else if (status === 'convertida') convertidasCount++;
       }
     });
 
     const averageScore = analyzedCount > 0 ? Math.round(totalScore / analyzedCount) : 0;
     
-    const topObjections = Object.entries(objectionCounts)
+    const topReasons = Object.entries(lossReasonCounts)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([name, count]) => `${name} (${count})`);
+      .slice(0, 1)
+      .map(([name]) => name);
 
     return {
       averageScore,
       analyzedCount,
       totalCount: initialConversations.length,
-      topObjections: topObjections.length > 0 ? topObjections.join(', ') : 'Nenhuma identificada',
+      emRiscoCount,
+      perdidasCount,
+      convertidasCount,
+      topLossReason: topReasons.length > 0 ? topReasons[0] : 'Envio de preço sem qualificação',
     };
   }, [initialConversations]);
 
-  // Filter conversations based on search term and operator filter
+  // Filter conversations based on search term, operator filter, and commercial status
   const filteredConversations = useMemo(() => {
     return initialConversations.filter(conv => {
       const phone = conv.client_phone || '';
@@ -162,9 +210,13 @@ export default function DashboardClient({ initialConversations, organization, la
       const matchesOperator = operatorFilter === 'all' || 
         (operatorFilter === 'unassigned' && !conv.operator_id) || 
         conv.operator_id === operatorFilter;
-      return matchesSearch && matchesOperator;
+      
+      const { status } = getCommercialStatus(conv);
+      const matchesStatus = statusFilter === 'all' || status === statusFilter;
+
+      return matchesSearch && matchesOperator && matchesStatus;
     });
-  }, [initialConversations, searchTerm, operatorFilter]);
+  }, [initialConversations, searchTerm, operatorFilter, statusFilter]);
 
   // Resolve active selection
   const selectedConversation = useMemo(() => {
@@ -212,6 +264,47 @@ export default function DashboardClient({ initialConversations, organization, la
     if (score >= 80) return 'bg-emerald-600';
     if (score >= 50) return 'bg-amber-500';
     return 'bg-rose-500';
+  };
+
+  const getCommercialBadge = (status: 'convertida' | 'em_risco' | 'perdida' | 'em_andamento') => {
+    switch (status) {
+      case 'convertida':
+        return {
+          label: 'Venda Fechada',
+          bg: 'bg-emerald-50',
+          text: 'text-emerald-700',
+          border: 'border-emerald-200',
+          dot: 'bg-emerald-500',
+          icon: '✅'
+        };
+      case 'em_risco':
+        return {
+          label: 'Em Risco',
+          bg: 'bg-amber-50',
+          text: 'text-amber-800',
+          border: 'border-amber-300',
+          dot: 'bg-amber-500',
+          icon: '🚨'
+        };
+      case 'perdida':
+        return {
+          label: 'Venda Perdida',
+          bg: 'bg-rose-50',
+          text: 'text-rose-700',
+          border: 'border-rose-200',
+          dot: 'bg-rose-500',
+          icon: '❌'
+        };
+      default:
+        return {
+          label: 'Em Andamento',
+          bg: 'bg-slate-50',
+          text: 'text-slate-600',
+          border: 'border-slate-200',
+          dot: 'bg-slate-400',
+          icon: '💬'
+        };
+    }
   };
 
   return (
@@ -314,49 +407,95 @@ export default function DashboardClient({ initialConversations, organization, la
       <main className="max-w-7xl mx-auto px-6 py-8">
         
         {/* Top Cards (Metrics Grid) - Compact and Aligned */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* Top Cards (Commercial Supervision Metrics Grid) */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           
-          {/* Card 1: Score Geral */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between transition-all duration-300 hover:border-slate-300 shadow-sm">
+          {/* Card 1: Oportunidades em Risco */}
+          <div 
+            onClick={() => setStatusFilter(statusFilter === 'em_risco' ? 'all' : 'em_risco')}
+            className={`bg-white border rounded-xl p-4 flex items-center justify-between transition-all duration-300 cursor-pointer shadow-sm ${
+              statusFilter === 'em_risco' ? 'border-amber-500 ring-2 ring-amber-500/20 bg-amber-50/20' : 'border-slate-200 hover:border-amber-300'
+            }`}
+          >
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-500/10">
-                <BarChart3 className="w-4 h-4" />
+              <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl border border-amber-200">
+                <AlertTriangle className="w-5 h-5 animate-pulse" />
               </div>
               <div>
-                <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Média Geral</div>
-                <div className="text-base font-extrabold text-slate-900 mt-0.5">{metrics.averageScore}%</div>
-              </div>
-            </div>
-            <span className="text-[10px] text-slate-400">meta: &gt;80%</span>
-          </div>
-
-          {/* Card 2: Conversas Analisadas */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between transition-all duration-300 hover:border-slate-300 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-50 text-emerald-650 rounded-lg border border-emerald-500/10">
-                <MessageSquare className="w-4 h-4" />
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Cobertura do Robô</div>
-                <div className="text-base font-extrabold text-slate-900 mt-0.5">
-                  {metrics.analyzedCount} <span className="text-xs text-slate-400 font-normal">/ {metrics.totalCount} leads</span>
+                <div className="text-[10px] text-amber-700 font-bold uppercase tracking-wider flex items-center gap-1">
+                  <span>🚨 Em Risco</span>
+                </div>
+                <div className="text-xl font-black text-slate-900 mt-0.5">
+                  {metrics.emRiscoCount} <span className="text-xs text-slate-400 font-normal">leads</span>
                 </div>
               </div>
             </div>
-            <span className="text-[10px] text-slate-400">
-              {metrics.totalCount > 0 ? `${Math.round((metrics.analyzedCount / metrics.totalCount) * 100)}%` : '0%'}
+            <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+              Ação imediata
             </span>
           </div>
 
-          {/* Card 3: Objeções mais frequentes */}
+          {/* Card 2: Vendas Perdidas */}
+          <div 
+            onClick={() => setStatusFilter(statusFilter === 'perdida' ? 'all' : 'perdida')}
+            className={`bg-white border rounded-xl p-4 flex items-center justify-between transition-all duration-300 cursor-pointer shadow-sm ${
+              statusFilter === 'perdida' ? 'border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/20' : 'border-slate-200 hover:border-rose-300'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl border border-rose-200">
+                <TrendingUp className="w-5 h-5 rotate-180 text-rose-500" />
+              </div>
+              <div>
+                <div className="text-[10px] text-rose-700 font-bold uppercase tracking-wider">
+                  ❌ Vendas Perdidas
+                </div>
+                <div className="text-xl font-black text-slate-900 mt-0.5">
+                  {metrics.perdidasCount} <span className="text-xs text-slate-400 font-normal">atendimentos</span>
+                </div>
+              </div>
+            </div>
+            <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+              Diagnóstico
+            </span>
+          </div>
+
+          {/* Card 3: Vendas Fechadas / Convertidas */}
+          <div 
+            onClick={() => setStatusFilter(statusFilter === 'convertida' ? 'all' : 'convertida')}
+            className={`bg-white border rounded-xl p-4 flex items-center justify-between transition-all duration-300 cursor-pointer shadow-sm ${
+              statusFilter === 'convertida' ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/20' : 'border-slate-200 hover:border-emerald-300'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-200">
+                <Target className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <div className="text-[10px] text-emerald-700 font-bold uppercase tracking-wider">
+                  ✅ Vendas Fechadas
+                </div>
+                <div className="text-xl font-black text-slate-900 mt-0.5">
+                  {metrics.convertidasCount} <span className="text-xs text-slate-400 font-normal">ganhos</span>
+                </div>
+              </div>
+            </div>
+            <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+              {metrics.analyzedCount > 0 ? `${Math.round((metrics.convertidasCount / metrics.analyzedCount) * 100)}% conv.` : '0%'}
+            </span>
+          </div>
+
+          {/* Card 4: Motivo Principal de Perda */}
           <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center transition-all duration-300 hover:border-slate-300 shadow-sm">
             <div className="flex items-center gap-3 min-w-0 w-full">
-              <div className="p-2 bg-amber-50 text-amber-600 rounded-lg border border-amber-500/10 shrink-0">
-                <AlertTriangle className="w-4 h-4" />
+              <div className="p-2.5 bg-slate-50 text-slate-600 rounded-xl border border-slate-200 shrink-0">
+                <HelpCircle className="w-5 h-5 text-slate-500" />
               </div>
               <div className="min-w-0">
-                <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Objeções mais Comuns</div>
-                <div className="text-xs font-bold text-amber-700 truncate mt-0.5">{metrics.topObjections}</div>
+                <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Maior Causa de Perda</div>
+                <div className="text-xs font-bold text-slate-800 truncate mt-0.5" title={metrics.topLossReason}>
+                  {metrics.topLossReason}
+                </div>
               </div>
             </div>
           </div>
@@ -367,12 +506,61 @@ export default function DashboardClient({ initialConversations, organization, la
           
           {/* Left Column: Conversas List */}
           <div className="lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-4 flex flex-col h-[calc(100vh-230px)] shadow-sm">
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 px-1 shrink-0">
-              Lista de Atendimentos ({filteredConversations.length})
-            </h2>
+            <div className="flex justify-between items-center mb-3 px-1 shrink-0">
+              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                Atendimentos ({filteredConversations.length})
+              </h2>
+              {statusFilter !== 'all' && (
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 underline"
+                >
+                  Limpar filtro
+                </button>
+              )}
+            </div>
+
+            {/* Commercial Status Quick Filter Tabs */}
+            <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl mb-3 shrink-0 text-[10px] font-bold text-center">
+              <button
+                onClick={() => setStatusFilter('all')}
+                className={`py-1.5 rounded-lg transition-all cursor-pointer ${
+                  statusFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Todos ({initialConversations.length})
+              </button>
+              <button
+                onClick={() => setStatusFilter('em_risco')}
+                className={`py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-0.5 ${
+                  statusFilter === 'em_risco' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-500 hover:text-amber-700'
+                }`}
+              >
+                <span>🚨 Risco</span>
+                <span className="text-[9px] opacity-80">({metrics.emRiscoCount})</span>
+              </button>
+              <button
+                onClick={() => setStatusFilter('perdida')}
+                className={`py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-0.5 ${
+                  statusFilter === 'perdida' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-500 hover:text-rose-700'
+                }`}
+              >
+                <span>❌ Perda</span>
+                <span className="text-[9px] opacity-80">({metrics.perdidasCount})</span>
+              </button>
+              <button
+                onClick={() => setStatusFilter('convertida')}
+                className={`py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-0.5 ${
+                  statusFilter === 'convertida' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-emerald-700'
+                }`}
+              >
+                <span>✅ Ganhos</span>
+                <span className="text-[9px] opacity-80">({metrics.convertidasCount})</span>
+              </button>
+            </div>
 
             {/* Operator Filter Dropdown */}
-            <div className="mb-4 shrink-0 px-1">
+            <div className="mb-3 shrink-0 px-1">
               <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                 Filtrar por Atendente
               </label>
@@ -394,7 +582,7 @@ export default function DashboardClient({ initialConversations, organization, la
             {filteredConversations.length === 0 ? (
               <div className="text-center py-12 border border-dashed border-slate-200 rounded-xl bg-slate-50 flex-1 flex flex-col justify-center items-center">
                 <MessageSquare className="w-8 h-8 text-slate-300 mb-2 animate-pulse" />
-                <p className="text-xs text-slate-450">Nenhum atendimento registrado.</p>
+                <p className="text-xs text-slate-450">Nenhum atendimento com o filtro selecionado.</p>
               </div>
             ) : (
               <div className="space-y-2 overflow-y-auto flex-1 pr-1 custom-scrollbar">
@@ -405,6 +593,8 @@ export default function DashboardClient({ initialConversations, organization, la
                     ? conv.messages[conv.messages.length - 1].content 
                     : 'Sem histórico de mensagens';
                   const assignedOperator = operators.find(op => op.id === conv.operator_id);
+                  const { status, motivo } = getCommercialStatus(conv);
+                  const badge = getCommercialBadge(status);
 
                   return (
                     <div
@@ -412,25 +602,30 @@ export default function DashboardClient({ initialConversations, organization, la
                       onClick={() => setSelectedId(conv.id)}
                       className={`group cursor-pointer border rounded-xl p-3.5 transition-all duration-205 text-left ${
                         isSelected 
-                          ? 'bg-emerald-50 border-emerald-500/30 shadow-sm' 
+                          ? 'bg-emerald-50/60 border-emerald-500/40 shadow-sm' 
                           : 'bg-white border-slate-100 hover:bg-slate-50 hover:border-slate-200'
                       }`}
                     >
                       <div className="flex justify-between items-start gap-2 mb-1.5">
                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${badge.dot}`} />
                           <span className="truncate">{formatPhoneNumber(conv.client_phone)}</span>
                         </div>
-                        {analysis ? (
-                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border shrink-0 ${getScoreColor(analysis.overall_score)}`}>
-                            {analysis.overall_score} pts
+                        <div className="flex items-center gap-1 shrink-0">
+                          {/* Commercial Badge */}
+                          <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-md border ${badge.bg} ${badge.text} ${badge.border}`}>
+                            {badge.label}
                           </span>
-                        ) : (
-                          <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 shrink-0">
-                            Pendente
-                          </span>
-                        )}
+                        </div>
                       </div>
+
+                      {/* Motivo da perda ou Risco destacado */}
+                      {motivo && (status === 'em_risco' || status === 'perdida') && (
+                        <div className="mb-2 px-2 py-1 bg-slate-50 border border-slate-200/80 rounded-lg text-[10px] text-slate-700 leading-tight">
+                          <span className="font-bold text-rose-600">Alerta: </span>
+                          <span className="truncate">{motivo.replace(/^FALHA GRAVE:\s*/i, '')}</span>
+                        </div>
+                      )}
                       
                       <p className="text-xs text-slate-600 truncate line-clamp-1 mb-2 font-medium">
                         {latestMsg}
@@ -441,9 +636,16 @@ export default function DashboardClient({ initialConversations, organization, la
                           <Calendar className="w-2.5 h-2.5" />
                           {formatDate(conv.created_at)}
                         </span>
-                        {conv.messages && (
-                          <span>{conv.messages.length} msgs</span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {conv.messages && (
+                            <span>{conv.messages.length} msgs</span>
+                          )}
+                          {analysis && (
+                            <span className="text-[10px] font-bold text-slate-500">
+                              Score: {analysis.overall_score}%
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {assignedOperator && (
@@ -602,6 +804,70 @@ export default function DashboardClient({ initialConversations, organization, la
           <div className="flex-1 overflow-y-auto p-6 md:p-8 custom-scrollbar bg-slate-50">
             <div className="max-w-5xl mx-auto space-y-6">
               
+              {/* Commercial Supervision - Loss Detection & Rescue Action Card */}
+              {(() => {
+                const comm = selectedConversation ? getCommercialStatus(selectedConversation) : { status: 'em_andamento' as const, motivo: null, acao: null };
+                const badge = getCommercialBadge(comm.status);
+
+                return (
+                  <div className={`p-5 rounded-2xl border transition-all ${
+                    comm.status === 'em_risco' 
+                      ? 'bg-amber-50/50 border-amber-300 shadow-sm' 
+                      : comm.status === 'perdida'
+                        ? 'bg-rose-50/50 border-rose-300 shadow-sm'
+                        : comm.status === 'convertida'
+                          ? 'bg-emerald-50/50 border-emerald-300 shadow-sm'
+                          : 'bg-white border-slate-200 shadow-sm'
+                  }`}>
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-200/60">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{badge.icon}</span>
+                        <div>
+                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                            Diagnóstico Comercial do Atendimento
+                          </div>
+                          <div className="text-base font-extrabold text-slate-900 flex items-center gap-2 mt-0.5">
+                            <span className={`px-2.5 py-0.5 rounded-lg border text-xs ${badge.bg} ${badge.text} ${badge.border}`}>
+                              {badge.label}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {comm.status === 'em_risco' && (
+                        <div className="px-3 py-1 bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold animate-pulse">
+                          🚨 Atenção: Intervenção Imediata Recomendada
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 text-xs">
+                      {/* Causa da Perda / Trava */}
+                      <div className="bg-white/80 border border-slate-200 rounded-xl p-3.5">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Motivo Principal do Risco ou Perda</span>
+                        </div>
+                        <p className="text-slate-800 font-semibold leading-relaxed mt-1">
+                          {comm.motivo ? comm.motivo.replace(/^FALHA GRAVE:\s*/i, '') : 'Nenhum erro grave detectado. Atendimento dentro do fluxo padrão.'}
+                        </p>
+                      </div>
+
+                      {/* Ação Sugerida de Resgate */}
+                      <div className="bg-white/80 border border-slate-200 rounded-xl p-3.5">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Ação Tática de Resgate / Próximo Passo</span>
+                        </div>
+                        <p className="text-slate-800 font-medium leading-relaxed mt-1">
+                          {comm.acao || (activeAnalysis.recommendations && activeAnalysis.recommendations.length > 0 ? activeAnalysis.recommendations[0] : 'Dar continuidade ao atendimento conduzindo o cliente para o próximo passo.')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Score & Resumo Row */}
               <div className="flex flex-col md:flex-row gap-5 items-stretch">
                 <div className={`p-6 rounded-xl border flex flex-col items-center justify-center w-full md:w-32 shrink-0 ${getScoreColor(activeAnalysis.overall_score)}`}>
