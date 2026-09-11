@@ -22,13 +22,16 @@ Deno.serve(async (req) => {
       })
     }
 
-    const apiUrl = Deno.env.get('EVOLUTION_API_URL')
-    const apiKey = Deno.env.get('EVOLUTION_API_KEY')
+    let apiUrl = Deno.env.get('EVOLUTION_API_URL')
+    let apiKey = Deno.env.get('EVOLUTION_API_KEY')
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!apiUrl || !apiKey) {
-      throw new Error('Evolution API URL or Key not configured in Deno environment.')
+    if (!apiUrl || apiUrl.includes('216.238.122.167')) {
+      apiUrl = 'https://evolution-evolution-api.qo61uu.easypanel.host'
+    }
+    if (!apiKey || apiKey === '429683C4C977415CAAFCCE10F7D57E11') {
+      apiKey = '2C916011-DD14-4A20-AE80-DB4AC1C91FFA'
     }
 
     const supabase = createClient(supabaseUrl || '', supabaseServiceRoleKey || '')
