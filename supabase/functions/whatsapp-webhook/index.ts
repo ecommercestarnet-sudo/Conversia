@@ -482,8 +482,8 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     return
   }
 
-  const EVOLUTION_API_URL = Deno.env.get('EVOLUTION_API_URL') ?? 'http://216.238.122.167:8081'
-  const EVOLUTION_API_KEY = Deno.env.get('EVOLUTION_API_KEY') ?? '429683C4C977415CAAFCCE10F7D57E11'
+  const EVOLUTION_API_URL = Deno.env.get('EVOLUTION_API_URL') ?? 'https://evolution-evolution-api.qo61uu.easypanel.host'
+  const EVOLUTION_API_KEY = Deno.env.get('EVOLUTION_API_KEY') ?? '2C916011-DD14-4A20-AE80-DB4AC1C91FFA'
 
   // Trigger constraints
   if (!force) {
