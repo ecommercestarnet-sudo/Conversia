@@ -545,7 +545,7 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
 
     const { data: playbookData, error: playbookError } = await supabase
       .from('ai_playbooks')
-      .select('company_context, knowledge_base, evaluation_criteria, custom_prompt')
+      .select('company_context, knowledge_base, evaluation_criteria, custom_prompt, alert_rules')
       .eq('organization_id', orgId)
       .maybeSingle()
 
@@ -561,7 +561,7 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
     console.log(`[AI Analyzer] No playbook found for organization_id ${orgId}. Attempting fallback to the first playbook in database.`)
     const { data: fallbackPlaybook, error: fallbackError } = await supabase
       .from('ai_playbooks')
-      .select('organization_id, company_context, knowledge_base, evaluation_criteria, custom_prompt')
+      .select('organization_id, company_context, knowledge_base, evaluation_criteria, custom_prompt, alert_rules')
       .limit(1)
       .maybeSingle()
 
@@ -725,8 +725,29 @@ Retorne UNICAMENTE o JSON abaixo (sem markdown, sem texto fora):
   "strengths": ["Ponto forte 1"],
   "weaknesses": ["Ponto fraco 1"],
   "recommendations": ["Recomendação prática 1"],
-  "objections": []
+  "objections": [],
+  "alerta_gestor": {
+    "deve_alertar": false,
+    "confianca": 90,
+    "tipo_falha": "OBJECAO_PRECO_IGNORADA",
+    "trecho_cliente": "Frase exata do cliente que levantou a objeção...",
+    "falha_vendedor": "O que o vendedor fez de errado...",
+    "acao_resgate": "Sugestão prática de mensagem persuasiva para resgatar a venda agora..."
+  }
 }
+
+═══════════════════════════════════════════
+ETAPA 3 — REGRA DE OURO PARA "alerta_gestor" (ZERO FALSOS ALARMES)
+═══════════════════════════════════════════
+Defina "deve_alertar": true SOMENTE SE:
+1. O atendimento NÃO foi convertido (se o cliente comprou ou agendou, "deve_alertar" DEVE ser false).
+2. Ocorreu uma das seguintes falhas graves comprovadas no histórico:
+   - "OBJECAO_PRECO_IGNORADA": O cliente disse que achou caro ou fora do orçamento e o vendedor respondeu com frieza ou desistiu sem apresentar plano alternativo.
+   - "PRECO_SECO_SEM_FECHAMENTO": O vendedor mandou preço/tabela sem investigar necessidades e a conversa esfriou sem nenhuma tentativa de fechamento/pergunta.
+   - "DESISTENCIA_SEM_RETENCAO": O cliente declarou que não vai fechar e o vendedor aceitou passivamente sem oferecer aula experimental ou alternativa.
+3. O vendedor já teve oportunidade de responder (NUNCA alerte se a última mensagem for do cliente e o vendedor ainda não respondeu).
+4. Seu nível de certeza/confiança na falha for alto (campo "confianca" >= 85).
+Caso contrário, "deve_alertar" DEVE ser false e os outros campos de alerta podem ser null ou strings vazias.
 
 ═══════════════════════════════════════════
 CONTEXTO DO NEGÓCIO
@@ -999,47 +1020,81 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
     console.error('[AI Analyzer] Error updating debouncing columns:', e)
   }
 
-  // Dispatch WhatsApp Alert if score <= 50 and owner_whatsapp is configured (Temporarily disabled)
-  const isAlertEnabled = false
-  if (isAlertEnabled && analysisResult.overall_score <= 50 && ownerWhatsapp && instanceName) {
-    const alertSent = convData?.alert_sent || false
+  // Dispatch Intelligent Deal Rescue Alert (Zero False Positives)
+  const alertRules = playbook?.alert_rules || {
+    alert_on_price_unhandled: true,
+    alert_on_dry_price: true,
+    alert_on_drop_unhandled: true,
+    min_confidence_score: 85,
+    alert_phone_override: ''
+  };
+
+  const alertaGestor = analysisResult.alerta_gestor;
+  const targetAlertPhone = (alertRules.alert_phone_override && alertRules.alert_phone_override.trim()) 
+    ? alertRules.alert_phone_override.trim() 
+    : ownerWhatsapp;
+
+  if (alertaGestor?.deve_alertar && targetAlertPhone && instanceName) {
+    const alertSent = convData?.alert_sent || false;
     if (alertSent) {
-      console.log(`[AI Analyzer] Low score alert already sent for conversation ${conversationId}. Skipping WhatsApp alert dispatch.`)
-      return
+      console.log(`[AI Analyzer] Rescue alert already sent for conversation ${conversationId}. Skipping WhatsApp alert dispatch.`);
+      return;
     }
 
-    console.log(`[AI Analyzer] Low score alert triggered (score: ${analysisResult.overall_score}) for organization ${orgName}. Sending alert to: ${ownerWhatsapp}`)
+    // Check confidence threshold
+    const minConfidence = alertRules.min_confidence_score || 85;
+    const confidence = alertaGestor.confianca || 0;
+    if (confidence < minConfidence) {
+      console.log(`[AI Analyzer] Rescue alert confidence ${confidence}% is below threshold ${minConfidence}%. Skipping alert.`);
+      return;
+    }
+
+    // Check if the specific trigger is enabled
+    const tipo = alertaGestor.tipo_falha;
+    let triggerEnabled = false;
+    if (tipo === 'OBJECAO_PRECO_IGNORADA' && alertRules.alert_on_price_unhandled !== false) triggerEnabled = true;
+    if (tipo === 'PRECO_SECO_SEM_FECHAMENTO' && alertRules.alert_on_dry_price !== false) triggerEnabled = true;
+    if (tipo === 'DESISTENCIA_SEM_RETENCAO' && alertRules.alert_on_drop_unhandled !== false) triggerEnabled = true;
+
+    if (!triggerEnabled) {
+      console.log(`[AI Analyzer] Rescue alert trigger for '${tipo}' is disabled in alert_rules. Skipping alert.`);
+      return;
+    }
+
+    console.log(`[AI Analyzer] Deal Rescue Alert TRIGGERED for conversation ${conversationId} (type: ${tipo}, confidence: ${confidence}%). Sending to: ${targetAlertPhone}`);
     try {
-      let operatorName = 'Não atribuído'
+      let operatorName = 'Não atribuído';
       if (operatorId) {
         const { data: operatorData } = await supabase
           .from('operators')
           .select('name')
           .eq('id', operatorId)
-          .maybeSingle()
+          .maybeSingle();
         if (operatorData) {
-          operatorName = operatorData.name
+          operatorName = operatorData.name;
         }
       }
 
-      const unfulfilled = (analysisResult.criterios || [])
-        .filter((c: any) => c.status === 'NAO_CUMPRIDO' || c.status === 'PARCIAL')
-        .map((c: any) => `• *${c.nome_criterio}*: ${c.justificativa}`)
-        .join('\n')
+      // Format title based on failure type
+      let tipoLabel = 'Objeção Crítica sem Contorno';
+      if (tipo === 'OBJECAO_PRECO_IGNORADA') tipoLabel = 'Objeção de Preço sem Contorno';
+      else if (tipo === 'PRECO_SECO_SEM_FECHAMENTO') tipoLabel = 'Envio de Preço sem Investigação';
+      else if (tipo === 'DESISTENCIA_SEM_RETENCAO') tipoLabel = 'Desistência sem Tentativa de Retenção';
 
-      const alertText = `⚠️ *Alerta de Auditoria SupervisIA* ⚠️\n\n` +
-        `Um atendimento foi avaliado com nota comercial baixa!\n\n` +
-        `*Cliente:* ${clientPhone}\n` +
-        `*Atendente Responsável:* ${operatorName}\n` +
-        `*Nota Comercial:* ${analysisResult.overall_score}/100\n\n` +
-        `*Itens do Playbook descumpridos:*\n${unfulfilled || 'Nenhum item comercial explícito listado.'}\n\n` +
-        `*Resumo:* ${analysisResult.summary}\n\n` +
-        `Acesse o painel para auditar o atendimento completo.`
+      const alertText = `🚨 *ConversIA • Alerta de Venda em Risco*\n\n` +
+        `👤 *Cliente:* ${clientPhone}\n` +
+        `🏋️ *Atendente:* ${operatorName}\n\n` +
+        `❌ *Falha Crítica:* ${tipoLabel}\n` +
+        `💬 *O cliente disse:* "${alertaGestor.trecho_cliente || 'Objeção levantada'}"\n` +
+        `🤦 *Falha do atendente:* ${alertaGestor.falha_vendedor || 'Não tratou a objeção conforme orientado no Playbook.'}\n\n` +
+        `🎯 *Sugestão de Resgate Imediato:*\n` +
+        `"${alertaGestor.acao_resgate || 'Entre em contato e ofereça uma condição de aula experimental ou desconto exclusivo.'}"\n\n` +
+        `👉 _Acesse o painel do ConversIA para auditar o atendimento completo._`;
 
-      const cleanPhone = ownerWhatsapp.replace(/[^0-9]/g, '')
-      const evolutionUrl = `${EVOLUTION_API_URL.replace(/\/$/, '')}/message/sendText/${instanceName}`
+      const cleanPhone = targetAlertPhone.replace(/[^0-9]/g, '');
+      const evolutionUrl = `${EVOLUTION_API_URL.replace(/\/$/, '')}/message/sendText/${instanceName}`;
       
-      console.log(`[AI Analyzer] Sending request to Evolution API URL: ${evolutionUrl}`)
+      console.log(`[AI Analyzer] Sending Deal Rescue request to Evolution API URL: ${evolutionUrl}`);
       const alertResp = await fetch(evolutionUrl, {
         method: 'POST',
         headers: {
@@ -1050,26 +1105,26 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
           number: cleanPhone,
           text: alertText
         })
-      })
+      });
 
       if (alertResp.ok) {
-        console.log(`[AI Analyzer] WhatsApp alert dispatched successfully to ${cleanPhone}.`)
+        console.log(`[AI Analyzer] WhatsApp Deal Rescue alert dispatched successfully to ${cleanPhone}.`);
         const { error: updateErr } = await supabase
           .from('conversations')
           .update({ alert_sent: true })
-          .eq('id', conversationId)
+          .eq('id', conversationId);
         
         if (updateErr) {
-          console.error(`[AI Analyzer] Failed to update conversation alert_sent status:`, updateErr.message)
+          console.error(`[AI Analyzer] Failed to update conversation alert_sent status:`, updateErr.message);
         } else {
-          console.log(`[AI Analyzer] Updated conversation ${conversationId} alert_sent to true.`)
+          console.log(`[AI Analyzer] Updated conversation ${conversationId} alert_sent to true.`);
         }
       } else {
-        const alertErrText = await alertResp.text()
-        console.error(`[AI Analyzer] Evolution API failed to send alert (status ${alertResp.status}):`, alertErrText)
+        const alertErrText = await alertResp.text();
+        console.error(`[AI Analyzer] Evolution API failed to send rescue alert (status ${alertResp.status}):`, alertErrText);
       }
     } catch (alertErr) {
-      console.error('[AI Analyzer] Failed to send low-score WhatsApp alert:', alertErr)
+      console.error('[AI Analyzer] Failed to send WhatsApp Deal Rescue alert:', alertErr);
     }
   }
 }

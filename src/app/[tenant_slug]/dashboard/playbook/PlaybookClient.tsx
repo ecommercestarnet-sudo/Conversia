@@ -30,6 +30,13 @@ interface Playbook {
   knowledge_base: string | null;
   evaluation_criteria: string | null;
   custom_prompt: string | null;
+  alert_rules?: {
+    alert_on_price_unhandled: boolean;
+    alert_on_dry_price: boolean;
+    alert_on_drop_unhandled: boolean;
+    min_confidence_score: number;
+    alert_phone_override?: string;
+  } | null;
 }
 
 interface PlaybookClientProps {
@@ -38,7 +45,7 @@ interface PlaybookClientProps {
   lastStatusLog?: { status: string; created_at: string } | null;
 }
 
-type TabType = 'context' | 'knowledge' | 'criteria' | 'prompt';
+type TabType = 'context' | 'knowledge' | 'criteria' | 'prompt' | 'alerts';
 
 export default function PlaybookClient({ company, initialPlaybook, lastStatusLog }: PlaybookClientProps) {
   const router = useRouter();
@@ -66,6 +73,16 @@ export default function PlaybookClient({ company, initialPlaybook, lastStatusLog
   const [knowledgeBase, setKnowledgeBase] = useState(initialPlaybook?.knowledge_base || '');
   const [evaluationCriteria, setEvaluationCriteria] = useState(initialPlaybook?.evaluation_criteria || '');
   const [customPrompt, setCustomPrompt] = useState(initialPlaybook?.custom_prompt || '');
+
+  // Alert Rules State (Deal Rescue)
+  const defaultAlertRules = {
+    alert_on_price_unhandled: true,
+    alert_on_dry_price: true,
+    alert_on_drop_unhandled: true,
+    min_confidence_score: 85,
+    alert_phone_override: ''
+  };
+  const [alertRules, setAlertRules] = useState(initialPlaybook?.alert_rules || defaultAlertRules);
 
   if (!company) {
     return (
@@ -98,12 +115,13 @@ export default function PlaybookClient({ company, initialPlaybook, lastStatusLog
       company_context: companyContext,
       knowledge_base: knowledgeBase,
       evaluation_criteria: evaluationCriteria,
-      custom_prompt: customPrompt
+      custom_prompt: customPrompt,
+      alert_rules: alertRules
     });
 
     setIsSaving(false);
     if (result.success) {
-      setNotification({ type: 'success', message: 'Configurações do Playbook salvas com sucesso!' });
+      setNotification({ type: 'success', message: 'Configurações do Playbook e Regras de Alerta salvas com sucesso!' });
       // Clear notification after 4 seconds
       setTimeout(() => setNotification(null), 4000);
     } else {
@@ -116,6 +134,7 @@ export default function PlaybookClient({ company, initialPlaybook, lastStatusLog
     { id: 'knowledge' as TabType, label: 'Base de Conhecimento', icon: BookOpen },
     { id: 'criteria' as TabType, label: 'Critérios de Avaliação', icon: Target },
     { id: 'prompt' as TabType, label: 'Instruções Extras', icon: Sliders },
+    { id: 'alerts' as TabType, label: 'Resgate de Vendas (Alertas)', icon: AlertTriangle },
   ];
 
   return (
@@ -313,6 +332,141 @@ Fatores que geram perda de pontos:
                 />
               </div>
             )}
+
+            {/* Tab 5: Resgate de Vendas em Tempo Real (Alertas ao Dono) */}
+            {activeTab === 'alerts' && (
+              <div className="space-y-6">
+                <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-base font-semibold text-slate-800">Radar de Resgate de Vendas (WhatsApp do Gestor)</h2>
+                      <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-700 rounded-full">
+                        Alta Conversão
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed max-w-2xl">
+                      Configure quando a IA deve enviar uma notificação urgente no WhatsApp do dono/gestor para você intervir e salvar uma venda que o vendedor cometeu uma falha crítica ou abandonou.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Anti-spam notice */}
+                <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-4 text-xs text-amber-900 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="font-semibold block mb-0.5">Proteção Inteligente Anti-Falso Alarme:</strong>
+                    A IA só envia o alerta se a conversa passar por 3 filtros: (1) o cliente fez a objeção, (2) o vendedor já teve a chance de responder e falhou no contorno, e (3) a confiança da IA for superior a {alertRules.min_confidence_score}%. Além disso, cada lead recebe no máximo 1 alerta ativo para não sobrecarregar seu WhatsApp.
+                  </div>
+                </div>
+
+                {/* Triggers selection */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    Situações Críticas para Disparar o Alerta
+                  </h3>
+
+                  {/* Trigger 1 */}
+                  <label className="flex items-start gap-3.5 p-4 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/20 transition-all cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={alertRules.alert_on_price_unhandled}
+                      onChange={(e) => setAlertRules({ ...alertRules, alert_on_price_unhandled: e.target.checked })}
+                      className="mt-1 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-800">Objeção de Preço Ignorada ou Abandonada</span>
+                        <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-medium">Urgente</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        O cliente diz que achou caro, fora do orçamento ou vai cotar com o concorrente, e o atendente responde com frieza (&ldquo;ok, qualquer coisa fale comigo&rdquo;) ou não apresenta planos alternativos.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Trigger 2 */}
+                  <label className="flex items-start gap-3.5 p-4 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/20 transition-all cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={alertRules.alert_on_dry_price}
+                      onChange={(e) => setAlertRules({ ...alertRules, alert_on_dry_price: e.target.checked })}
+                      className="mt-1 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-800">Envio de Preço Seco sem Investigação (Panfletagem)</span>
+                        <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Crítico</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        O atendente envia a tabela de preços imediatamente sem qualificar o objetivo ou dor do cliente, e a conversa esfria sem nenhuma pergunta de fechamento ou chamada para ação.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Trigger 3 */}
+                  <label className="flex items-start gap-3.5 p-4 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/20 transition-all cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={alertRules.alert_on_drop_unhandled}
+                      onChange={(e) => setAlertRules({ ...alertRules, alert_on_drop_unhandled: e.target.checked })}
+                      className="mt-1 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-800">Desistência Declarada sem Tentativa de Retenção</span>
+                        <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">Última Chance</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        O cliente diz que &ldquo;não vai poder agora&rdquo; ou &ldquo;vai deixar para o mês que vem&rdquo; e o vendedor aceita a perda passivamente sem oferecer aula experimental ou condição de entrada facilitada.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Configuration: Threshold and Phone */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Nível de Rigor / Certeza da IA
+                    </label>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      Evita mensagens falsas. Recomendamos 85% para receber apenas alertas reais.
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min="70"
+                        max="95"
+                        step="5"
+                        value={alertRules.min_confidence_score}
+                        onChange={(e) => setAlertRules({ ...alertRules, min_confidence_score: Number(e.target.value) })}
+                        className="w-full accent-emerald-600 cursor-pointer"
+                      />
+                      <span className="text-xs font-bold px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-emerald-700 shadow-sm shrink-0">
+                        {alertRules.min_confidence_score}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      WhatsApp para Receber os Alertas de Resgate
+                    </label>
+                    <p className="text-[11px] text-slate-500 mb-2">
+                      Deixe em branco para usar o WhatsApp do Dono cadastrado em Configurações.
+                    </p>
+                    <input
+                      type="text"
+                      placeholder="Ex: 5585999990000"
+                      value={alertRules.alert_phone_override || ''}
+                      onChange={(e) => setAlertRules({ ...alertRules, alert_phone_override: e.target.value })}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
 
           </div>
 
