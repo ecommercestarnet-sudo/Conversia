@@ -100,12 +100,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3. Generate a brand new unique instance name (alphanumeric, short like "atendimento" to avoid DB limitations)
+    // 3. Generate instance name for this organization
     const newInstanceName = `o${organizationId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10)}`
-    console.log(`[Evolution Manager] Generated short instance name: ${newInstanceName}`)
+    console.log(`[Evolution Manager] Target instance name: ${newInstanceName}`)
 
-    // 4. Create the new instance on Evolution API
+    // 4. Try to Create the instance on Evolution API, or handle if it already exists
     const createUrl = `${apiUrl.replace(/\/$/, '')}/instance/create`
+    let createData: any = null
     const createResp = await fetch(createUrl, {
       method: 'POST',
       headers: {
@@ -121,11 +122,47 @@ Deno.serve(async (req) => {
 
     if (!createResp.ok) {
       const errText = await createResp.text()
-      throw new Error(`Failed to create instance on Evolution API: ${createResp.statusText} - ${errText}`)
-    }
+      // If the instance already exists on Evolution API, delete and recreate it cleanly or connect to it
+      if (errText.includes('already in use') || createResp.status === 403) {
+        console.log(`[Evolution Manager] Instance ${newInstanceName} already exists on Evolution. Deleting it to regenerate clean session...`)
+        const deleteUrl = `${apiUrl.replace(/\/$/, '')}/instance/delete/${newInstanceName}`
+        try {
+          await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: { 'apikey': apiKey }
+          })
+        } catch (e) {
+          console.warn('[Evolution Manager] Error deleting existing instance:', e)
+        }
 
-    const createData = await createResp.json()
-    console.log(`[Evolution Manager] Instance ${newInstanceName} created successfully.`)
+        // Try creating again after deleting
+        console.log(`[Evolution Manager] Recreating instance ${newInstanceName}...`)
+        const retryResp = await fetch(createUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': apiKey
+          },
+          body: JSON.stringify({
+            instanceName: newInstanceName,
+            qrcode: true,
+            integration: 'WHATSAPP-BAILEYS'
+          })
+        })
+
+        if (retryResp.ok) {
+          createData = await retryResp.json()
+        } else {
+          // If retry creation still fails, we will fetch QR code from connect endpoint
+          console.warn(`[Evolution Manager] Recreate returned status ${retryResp.status}. Will fetch QR code from connect endpoint.`)
+        }
+      } else {
+        throw new Error(`Failed to create instance on Evolution API: ${createResp.statusText} - ${errText}`)
+      }
+    } else {
+      createData = await createResp.json()
+      console.log(`[Evolution Manager] Instance ${newInstanceName} created successfully.`)
+    }
 
     // 5. Configure webhook automatically for this new instance
     const webhookUrlSetting = `${supabaseUrl}/functions/v1/whatsapp-webhook`
@@ -206,7 +243,7 @@ Deno.serve(async (req) => {
     }
 
     // 8. Retrieve the QR Code from the response data or connect endpoint
-    const createQrcode = createData.base64 || createData.qrcode?.base64 || null
+    const createQrcode = createData?.base64 || createData?.qrcode?.base64 || null
     let qrcodeBase64 = createQrcode
 
     if (!qrcodeBase64) {
