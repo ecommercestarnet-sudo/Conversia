@@ -35,6 +35,7 @@ interface Playbook {
     alert_on_dry_price: boolean;
     alert_on_drop_unhandled: boolean;
     min_confidence_score: number;
+    wait_minutes_before_alert?: number;
     alert_phone_override?: string;
   } | null;
 }
@@ -80,9 +81,13 @@ export default function PlaybookClient({ company, initialPlaybook, lastStatusLog
     alert_on_dry_price: true,
     alert_on_drop_unhandled: true,
     min_confidence_score: 85,
+    wait_minutes_before_alert: 5,
     alert_phone_override: ''
   };
-  const [alertRules, setAlertRules] = useState(initialPlaybook?.alert_rules || defaultAlertRules);
+  const [alertRules, setAlertRules] = useState({
+    ...defaultAlertRules,
+    ...(initialPlaybook?.alert_rules || {})
+  });
 
   if (!company) {
     return (
@@ -423,14 +428,14 @@ Fatores que geram perda de pontos:
                   </label>
                 </div>
 
-                {/* Configuration: Threshold and Phone */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                {/* Configuration: Threshold, Wait Time and Phone */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Nível de Rigor / Certeza da IA
+                      Nível de Rigor da IA
                     </label>
                     <p className="text-[11px] text-slate-500 mb-3">
-                      Evita mensagens falsas. Recomendamos 85% para receber apenas alertas reais.
+                      Certeza mínima para alertar (Recomendado: 85%).
                     </p>
                     <div className="flex items-center gap-3">
                       <input
@@ -450,10 +455,29 @@ Fatores que geram perda de pontos:
 
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      WhatsApp para Receber os Alertas de Resgate
+                      Tempo de Tolerância do Vendedor
                     </label>
                     <p className="text-[11px] text-slate-500 mb-2">
-                      Deixe em branco para usar o WhatsApp do Dono cadastrado em Configurações.
+                      Tempo para o vendedor responder a objeção antes de alertar o dono.
+                    </p>
+                    <select
+                      value={alertRules.wait_minutes_before_alert ?? 5}
+                      onChange={(e) => setAlertRules({ ...alertRules, wait_minutes_before_alert: Number(e.target.value) })}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value={2}>2 minutos (Rápido)</option>
+                      <option value={5}>5 minutos (Recomendado)</option>
+                      <option value={10}>10 minutos</option>
+                      <option value={15}>15 minutos</option>
+                    </select>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      WhatsApp para Alertas
+                    </label>
+                    <p className="text-[11px] text-slate-500 mb-2">
+                      Em branco usa o WhatsApp do Dono cadastrado.
                     </p>
                     <input
                       type="text"

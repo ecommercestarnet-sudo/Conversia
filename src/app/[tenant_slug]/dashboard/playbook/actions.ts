@@ -8,6 +8,7 @@ export interface AlertRules {
   alert_on_dry_price: boolean;
   alert_on_drop_unhandled: boolean;
   min_confidence_score: number;
+  wait_minutes_before_alert?: number;
   alert_phone_override?: string;
 }
 

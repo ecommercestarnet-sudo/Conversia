@@ -1041,6 +1041,23 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
       return;
     }
 
+    // CHECK: Quem enviou a última mensagem?
+    // Se a última mensagem for do cliente, o vendedor ainda NÃO respondeu à objeção!
+    const lastMsg = messages && messages.length > 0 ? messages[messages.length - 1] : null;
+    const lastSender = lastMsg ? (lastMsg.sender_type === 'agent' || lastMsg.sender_type === 'atendente' ? 'vendedor' : 'cliente') : null;
+
+    if (lastSender === 'cliente') {
+      // O cliente acabou de falar a objeção. Verificar se já passou o tempo de tolerância.
+      const waitMinutes = alertRules.wait_minutes_before_alert ?? 5;
+      const msgCreatedAt = lastMsg ? new Date(lastMsg.created_at).getTime() : 0;
+      const elapsedMinutes = (Date.now() - msgCreatedAt) / (1000 * 60);
+
+      if (elapsedMinutes < waitMinutes) {
+        console.log(`[AI Analyzer] A última mensagem foi do cliente há ${elapsedMinutes.toFixed(1)} min. Aguardando tempo de resposta do vendedor (${waitMinutes} min). Nenhum alerta enviado agora.`);
+        return;
+      }
+    }
+
     // Check confidence threshold
     const minConfidence = alertRules.min_confidence_score || 85;
     const confidence = alertaGestor.confianca || 0;
