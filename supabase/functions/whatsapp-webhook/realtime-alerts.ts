@@ -491,7 +491,7 @@ AVALIE RIGOROSAMENTE CADA CAMPO:
 2. "vendedor_enviou_precos": boolean - true se o vendedor informou preços, valores numéricos de planos ou tabela de pagamento nas mensagens com ">>".
 3. "vendedor_finalizou_com_pergunta": boolean - true se a última mensagem do vendedor termina com pergunta de avanço comercial (agendar visita, aula experimental, matrícula). Perguntas vazias como "tudo bem?", "qualquer dúvida avisa" = false.
 4. "infracao_detectada": "panfletagem" | "objecao_ignorada" | "desistencia_passiva" | "lead_sem_resposta" | "nenhuma".
-   Prioridade: objecao_ignorada / desistencia_passiva > panfletagem > lead_sem_resposta.`
+   Prioridade: objecao_ignorada / desistencia_passiva > panfletagem > lead_sem_resposta.
 5. "disparar_alerta": boolean - true se houver infração comprovada de acordo com as regras ativas.
 6. "confianca": number de 0 a 100 indicando sua certeza. Mantenha >= 85 se a regra objetiva for cumprida.
 7. "motivo_resumido": string - Frase concisa para o gestor descrevendo a falha exata (ex: "Vendedor passou valores do plano anual sem investigar o objetivo do aluno").
