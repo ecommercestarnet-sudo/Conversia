@@ -104,6 +104,61 @@ export default function DashboardClient({ initialConversations, organization, la
   const [isAssigning, setIsAssigning] = useState(false);
   const [isTeamRankingOpen, setIsTeamRankingOpen] = useState(false);
 
+  const handleSignOut = async () => {
+    await logout();
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    router.refresh();
+    setTimeout(() => {
+      setIsRefreshing(false);
+    }, 800);
+  };
+
+  // Safe helper to extract active analysis
+  const getAnalysis = (conv: Conversation): Analysis | null => {
+    if (!conv.analyses) return null;
+    if (Array.isArray(conv.analyses)) {
+      return conv.analyses.length > 0 ? conv.analyses[0] : null;
+    }
+    return conv.analyses;
+  };
+
+  // Extract commercial status helper
+  const getCommercialStatus = (conv: Conversation): {
+    status: 'convertida' | 'em_risco' | 'perdida' | 'em_andamento';
+    motivo: string | null;
+    acao: string | null;
+  } => {
+    const analysis = getAnalysis(conv);
+    if (!analysis) {
+      return { status: 'em_andamento', motivo: null, acao: null };
+    }
+
+    const scores = analysis.scores || {};
+    const raciocinio = scores._raciocinio_previo || {};
+
+    let status: 'convertida' | 'em_risco' | 'perdida' | 'em_andamento' = 
+      scores.status_comercial || 
+      raciocinio.status_comercial || 
+      (raciocinio.conversa_convertida ? 'convertida' : 
+       analysis.overall_score >= 80 ? 'convertida' : 
+       analysis.overall_score <= 50 ? 'perdida' : 'em_risco');
+
+    let motivo: string | null = 
+      scores.motivo_perda || 
+      raciocinio.motivo_perda || 
+      (analysis.weaknesses && analysis.weaknesses.length > 0 ? analysis.weaknesses[0] : null);
+
+    let acao: string | null = 
+      scores.acao_resgate_sugerida || 
+      raciocinio.acao_resgate_sugerida || 
+      (analysis.recommendations && analysis.recommendations.length > 0 ? analysis.recommendations[0] : null);
+
+    return { status, motivo, acao };
+  };
+
   // Helper: Detect if conversation is waiting for operator response & elapsed minutes
   const getWaitInfo = (conv: Conversation): { isWaiting: boolean; elapsedMinutes: number; text: string | null } => {
     if (!conv.messages || conv.messages.length === 0) {
@@ -195,61 +250,6 @@ export default function DashboardClient({ initialConversations, organization, la
       }))
       .sort((a, b) => b.convertidas - a.convertidas || b.avgScore - a.avgScore);
   }, [initialConversations, operators]);
-
-  const handleSignOut = async () => {
-    await logout();
-  };
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    router.refresh();
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 800);
-  };
-
-  // Safe helper to extract active analysis
-  const getAnalysis = (conv: Conversation): Analysis | null => {
-    if (!conv.analyses) return null;
-    if (Array.isArray(conv.analyses)) {
-      return conv.analyses.length > 0 ? conv.analyses[0] : null;
-    }
-    return conv.analyses;
-  };
-
-  // Extract commercial status helper
-  const getCommercialStatus = (conv: Conversation): {
-    status: 'convertida' | 'em_risco' | 'perdida' | 'em_andamento';
-    motivo: string | null;
-    acao: string | null;
-  } => {
-    const analysis = getAnalysis(conv);
-    if (!analysis) {
-      return { status: 'em_andamento', motivo: null, acao: null };
-    }
-
-    const scores = analysis.scores || {};
-    const raciocinio = scores._raciocinio_previo || {};
-
-    let status: 'convertida' | 'em_risco' | 'perdida' | 'em_andamento' = 
-      scores.status_comercial || 
-      raciocinio.status_comercial || 
-      (raciocinio.conversa_convertida ? 'convertida' : 
-       analysis.overall_score >= 80 ? 'convertida' : 
-       analysis.overall_score <= 50 ? 'perdida' : 'em_risco');
-
-    let motivo: string | null = 
-      scores.motivo_perda || 
-      raciocinio.motivo_perda || 
-      (analysis.weaknesses && analysis.weaknesses.length > 0 ? analysis.weaknesses[0] : null);
-
-    let acao: string | null = 
-      scores.acao_resgate_sugerida || 
-      raciocinio.acao_resgate_sugerida || 
-      (analysis.recommendations && analysis.recommendations.length > 0 ? analysis.recommendations[0] : null);
-
-    return { status, motivo, acao };
-  };
 
   // Calculations & Metrics
   const metrics = useMemo(() => {
