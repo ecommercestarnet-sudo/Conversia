@@ -341,16 +341,23 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     (sugestao ? `🎯 *Sugestão de Resgate:*\n"${sugestao}"\n\n` : '') +
     `👉 *Painel:* ${linkPainel}`
 
-  // B) Mensagem para o VENDEDOR (seller_phone) - Tom pedagógico de mentoria, sem termos punitivos
-  const mensagemVendedor = isProcess
-    ? `💡 *Dica Rápida ConversIA*\n\n` +
-      `Notei que passou os preços antes de investigar o objetivo do aluno ou sem finalizar com um convite.\n\n` +
-      `🎯 *O que mandar agora para salvar a conversa:*\n` +
-      `"${sugestao}"`
-    : `💡 *Dica Rápida ConversIA*\n\n` +
-      `O cliente demonstrou uma objeção ("${verdict.trecho_cliente || 'achou caro / vai pensar'}"). Não deixe a conversa esfriar!\n\n` +
-      `🎯 *O que mandar agora para salvar a conversa:*\n` +
-      `"${sugestao}"`
+  // B) Mensagem para o VENDEDOR (seller_phone) - Tom pedagógico e encorajador de apoio
+  const pontoDeAtencao = isProcess
+    ? 'Envio de valor antes de identificar o objetivo do aluno ou sem pergunta de agendamento.'
+    : (verdict.trecho_cliente ? `Objeção apresentada pelo cliente: "${verdict.trecho_cliente}".` : 'Objeção do cliente não contornada.')
+
+  const dicaConducao = verdict.dica_treinador || (isProcess
+    ? 'Sempre descubra o objetivo antes do preço e encerre a mensagem com uma pergunta para manter o controle da conversa.'
+    : 'Acolha a preocupação do cliente, gere valor sobre a experiência e convide para uma visita ou aula experimental.')
+
+  const mensagemVendedor =
+    `⚡ *ConversIA • Apoio ao Atendimento*\n\n` +
+    `👤 *Lead:* ${leadPhone}\n` +
+    `🏋️ *Atendente:* ${sellerName}\n\n` +
+    `⚠️ *Ponto de Atenção:*\n${pontoDeAtencao}\n\n` +
+    `💡 *Dica de Condução:*\n${dicaConducao}\n\n` +
+    `🎯 *Copie e envie agora para o cliente:*\n` +
+    `"${sugestao}"`
 
   // =========================================================================
   // 2. Envios da Evolution API (/message/sendText):
