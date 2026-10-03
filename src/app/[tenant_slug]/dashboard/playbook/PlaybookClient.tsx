@@ -34,6 +34,7 @@ interface Playbook {
     alert_on_price_unhandled: boolean;
     alert_on_dry_price: boolean;
     alert_on_drop_unhandled: boolean;
+    alert_on_unanswered_lead?: boolean;
     min_confidence_score: number;
     wait_minutes_before_alert?: number;
     alert_phone_override?: string;
@@ -80,6 +81,7 @@ export default function PlaybookClient({ company, initialPlaybook, lastStatusLog
     alert_on_price_unhandled: true,
     alert_on_dry_price: true,
     alert_on_drop_unhandled: true,
+    alert_on_unanswered_lead: true,
     min_confidence_score: 85,
     wait_minutes_before_alert: 5,
     cooldown_minutes: 15,
