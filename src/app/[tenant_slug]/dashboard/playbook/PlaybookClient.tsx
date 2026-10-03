@@ -360,7 +360,9 @@ Fatores que geram perda de pontos:
                   <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                   <div>
                     <strong className="font-semibold block mb-0.5">Proteção Inteligente Anti-Falso Alarme:</strong>
-                    A IA só envia o alerta se a conversa passar por 3 filtros: (1) o cliente fez a objeção, (2) o vendedor já teve a chance de responder e falhou no contorno, e (3) a confiança da IA for superior a {alertRules.min_confidence_score}%. Além disso, cada lead recebe no máximo 1 alerta ativo para não sobrecarregar seu WhatsApp.
+                    <span className="block"><strong>Infrações de processo</strong> (envio de preço sem diagnóstico ou sem pergunta de fechamento) são validadas no instante em que a mensagem do vendedor chega — <strong>não exigem objeção do cliente</strong>.</span>
+                    <span className="block mt-1"><strong>Alertas de objeção/desistência</strong> só disparam quando o cliente demonstra resistência explícita e o vendedor responde sem contornar — ou não responde dentro do tempo de tolerância.</span>
+                    <span className="block mt-1">Todo alerta exige confiança mínima de {alertRules.min_confidence_score}% e cada tipo de alerta é enviado no máximo 1 vez por conversa.</span>
                   </div>
                 </div>
 
@@ -403,7 +405,7 @@ Fatores que geram perda de pontos:
                         <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Crítico</span>
                       </div>
                       <p className="text-xs text-slate-500 mt-1">
-                        O atendente envia a tabela de preços imediatamente sem qualificar o objetivo ou dor do cliente, e a conversa esfria sem nenhuma pergunta de fechamento ou chamada para ação.
+                        O atendente informa valores ou tabela de preços antes de perguntar o objetivo/necessidade do aluno, ou envia o preço sem finalizar com pergunta de fechamento/agendamento.
                       </p>
                     </div>
                   </label>

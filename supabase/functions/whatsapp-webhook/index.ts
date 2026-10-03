@@ -1,8 +1,25 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { runRealtimeAlertEngine, sweepPendingObjectionAlerts } from './realtime-alerts.ts'
+
+function getEvolutionConfig() {
+  let url = Deno.env.get('EVOLUTION_API_URL')
+  let key = Deno.env.get('EVOLUTION_API_KEY')
+  if (!url || url.includes('216.238.122.167')) url = 'https://evolution-evolution-api.qo61uu.easypanel.host'
+  if (!key || key === '429683C4C977415CAAFCCE10F7D57E11') key = '2C916011-DD14-4A20-AE80-DB4AC1C91FFA'
+  return { evolutionUrl: url, evolutionKey: key }
+}
 
 Deno.serve(async (req) => {
   try {
     const reqBody = await req.json()
+
+    // Varredura periódica (pg_cron): alerta de objeção quando o vendedor NÃO respondeu no tempo de tolerância
+    if (reqBody?.action === 'sweep_alerts') {
+      const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
+      const result = await sweepPendingObjectionAlerts(supabase, getEvolutionConfig())
+      return new Response(JSON.stringify({ success: true, ...result }), { headers: { 'Content-Type': 'application/json' } })
+    }
+
     console.log('Payload completo:', JSON.stringify(reqBody))
 
     const event = (reqBody.event || '').toLowerCase()
@@ -429,6 +446,14 @@ Deno.serve(async (req) => {
           }
         }
 
+        // Motor 1: Alertas em tempo real (independente da nota e do mínimo de mensagens)
+        try {
+          await runRealtimeAlertEngine(supabase, String(conversationId), { ...getEvolutionConfig(), mode: 'message' })
+        } catch (alertError) {
+          console.error('[RealtimeAlert] Falha no motor de alertas:', alertError)
+        }
+
+        // Motor 2: Auditoria completa / nota comercial
         try {
           await analyzeConversation(supabase, String(conversationId))
         } catch (analysisError) {
@@ -1029,7 +1054,8 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
     alert_phone_override: ''
   };
 
-  const alertaGestor = analysisResult.alerta_gestor;
+  // Alertas ao gestor agora são tratados exclusivamente pelo motor em tempo real (realtime-alerts.ts)
+  const alertaGestor = null as any;
   const targetAlertPhone = (alertRules.alert_phone_override && alertRules.alert_phone_override.trim()) 
     ? alertRules.alert_phone_override.trim() 
     : ownerWhatsapp;

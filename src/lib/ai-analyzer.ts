@@ -641,7 +641,8 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
     alert_phone_override: ''
   };
 
-  const alertaGestor = analysisResult.alerta_gestor;
+  // Alertas ao gestor agora são tratados exclusivamente pela Edge Function (realtime-alerts.ts)
+  const alertaGestor = null as any;
   const targetAlertPhone = (alertRules.alert_phone_override && alertRules.alert_phone_override.trim()) 
     ? alertRules.alert_phone_override.trim() 
     : ownerWhatsapp;
