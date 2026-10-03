@@ -75,8 +75,13 @@ export async function analyzeConversation(conversationId: string, force: boolean
 
   // Trigger constraints
   if (!force) {
-    if (messages.length < 3) {
-      console.log(`[AI Analyzer] Skipping analysis. Conversation ${conversationId} has only ${messages.length} messages (min 3 required).`);
+    const lastMsg = messages[messages.length - 1];
+    const isClientLast = lastMsg.sender_type === 'client' || lastMsg.sender_type === 'cliente';
+    const elapsedMinutes = (Date.now() - new Date(lastMsg.created_at).getTime()) / (1000 * 60);
+
+    // Permite análise se tiver >= 3 mensagens OU se o cliente já estiver aguardando há mais de 3 minutos
+    if (messages.length < 3 && (!isClientLast || elapsedMinutes < 3)) {
+      console.log(`[AI Analyzer] Skipping analysis. Conversation ${conversationId} has only ${messages.length} messages and is not waiting.`);
       return;
     }
   }

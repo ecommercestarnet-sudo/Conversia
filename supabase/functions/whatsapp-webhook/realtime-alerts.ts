@@ -18,12 +18,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 type SB = ReturnType<typeof createClient>
 
-export type Infracao = 'panfletagem' | 'objecao_ignorada' | 'desistencia_passiva' | 'nenhuma'
+export type Infracao = 'panfletagem' | 'objecao_ignorada' | 'desistencia_passiva' | 'lead_sem_resposta' | 'nenhuma'
 
 interface AlertRules {
   alert_on_price_unhandled: boolean
   alert_on_dry_price: boolean
   alert_on_drop_unhandled: boolean
+  alert_on_unanswered_lead?: boolean
   min_confidence_score: number
   wait_minutes_before_alert: number
   cooldown_minutes?: number
@@ -59,6 +60,7 @@ const DEFAULT_RULES: AlertRules = {
   alert_on_price_unhandled: true,
   alert_on_dry_price: true,
   alert_on_drop_unhandled: true,
+  alert_on_unanswered_lead: true,
   min_confidence_score: 85,
   wait_minutes_before_alert: 5,
   cooldown_minutes: 15,
@@ -78,12 +80,14 @@ const RULE_BY_INFRACAO: Record<Exclude<Infracao, 'nenhuma'>, keyof AlertRules> =
   panfletagem: 'alert_on_dry_price',
   objecao_ignorada: 'alert_on_price_unhandled',
   desistencia_passiva: 'alert_on_drop_unhandled',
+  lead_sem_resposta: 'alert_on_unanswered_lead',
 }
 
 const LABEL_BY_INFRACAO: Record<Exclude<Infracao, 'nenhuma'>, string> = {
   panfletagem: 'Envio de Preço sem Diagnóstico / sem Pergunta de Fechamento',
   objecao_ignorada: 'Objeção do Cliente Ignorada ou Abandonada',
   desistencia_passiva: 'Desistência Aceita sem Tentativa de Retenção',
+  lead_sem_resposta: 'Lead Aguardando Resposta do Atendente (Tempo Excedido)',
 }
 
 function getOpenAiKey(): string | null {
@@ -108,7 +112,7 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     .limit(20)
   if (msgErr || !recentDesc || recentDesc.length === 0) return
   const messages = (recentDesc as Msg[]).reverse()
-  if (!messages.some(isAgent)) return // vendedor ainda não falou nada
+  const sellerSpoke = messages.some(isAgent)
 
   // 2. Dados da Conversa
   let conv: any = null
@@ -152,7 +156,7 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     .maybeSingle()
 
   const rules: AlertRules = { ...DEFAULT_RULES, ...((playbook as any)?.alert_rules || {}) }
-  const anyRuleOn = rules.alert_on_dry_price || rules.alert_on_price_unhandled || rules.alert_on_drop_unhandled
+  const anyRuleOn = rules.alert_on_dry_price || rules.alert_on_price_unhandled || rules.alert_on_drop_unhandled || rules.alert_on_unanswered_lead !== false
   if (!anyRuleOn) return
 
   const modoTesteAtivo = rules.modo_teste === true || isEnvModoTeste()
@@ -189,6 +193,17 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
   const lastSender: 'vendedor' | 'cliente' = isAgent(last) ? 'vendedor' : 'cliente'
   const minutesSinceLast = (Date.now() - new Date(last.created_at).getTime()) / 60000
 
+  // Se o vendedor nunca falou e o cliente enviou mensagem
+  if (!sellerSpoke) {
+    // Só avalia se já passou o tempo de tolerância (seja em sweep ou após espera)
+    if (lastSender === 'cliente' && minutesSinceLast >= (rules.wait_minutes_before_alert ?? 5)) {
+      // Candidato a lead sem resposta
+    } else {
+      console.log(`${tag} Vendedor ainda não falou e cliente mandou msg há apenas ${minutesSinceLast.toFixed(1)} min. Aguardando.`)
+      return
+    }
+  }
+
   // Bloco atual do vendedor = mensagens do vendedor após a última mensagem do cliente
   let lastClientIdx = -1
   messages.forEach((m, i) => { if (!isAgent(m)) lastClientIdx = i })
@@ -205,8 +220,13 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     else if (opts.mode === 'sweep' && minutesSinceLast >= rules.wait_minutes_before_alert) objectionCandidate = true // vendedor não respondeu
   }
 
-  if (!processCandidate && !objectionCandidate) {
-    console.log(`${tag} Sem candidato a alerta (lastSender=${lastSender}, preço=${blockHasPriceRegex}, mode=${opts.mode}).`)
+  // Candidato a Lead Sem Resposta (seja 1ª mensagem ou no meio da conversa)
+  const unansweredCandidate = rules.alert_on_unanswered_lead !== false &&
+    lastSender === 'cliente' &&
+    minutesSinceLast >= (rules.wait_minutes_before_alert ?? 5)
+
+  if (!processCandidate && !objectionCandidate && !unansweredCandidate) {
+    console.log(`${tag} Sem candidato a alerta (lastSender=${lastSender}, preço=${blockHasPriceRegex}, unanswered=${unansweredCandidate}, mode=${opts.mode}).`)
     return
   }
 
@@ -243,6 +263,11 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
 
   if (objectionCandidate && isObjectionType && verdict.disparar_alerta && confidenceOk && rules[RULE_BY_INFRACAO[normalizedVerdictInfracao]]) {
     finalInfracao = normalizedVerdictInfracao
+  } else if (unansweredCandidate && (normalizedVerdictInfracao === 'lead_sem_resposta' || lastSender === 'cliente')) {
+    // Lead sem resposta: o cliente mandou mensagem (1ª msg ou réplica) e vendedor não respondeu no prazo
+    if (rules.alert_on_unanswered_lead !== false) {
+      finalInfracao = 'lead_sem_resposta'
+    }
   } else if (processCandidate) {
     // Panfletagem de Preço: Regra de processo imediata.
     // Preço enviado + (sem investigação prévia OU sem finalizar com pergunta de agendamento/visita)
@@ -322,11 +347,17 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
   const tenantSlug = org.slug || 'empresa'
   const linkPainel = `${baseUrl}/${tenantSlug}/dashboard`
 
+  const clientDigits = String(conv.client_phone || '').replace(/\D/g, '')
+  const waDirectLink = clientDigits ? `https://wa.me/${clientDigits}` : ''
+
   const checklist = isProcess
     ? `${verdict.houve_investigacao_previa ? '✅' : '❌'} Identificou o objetivo antes do preço\n` +
       `${lastAgentEndsWithQuestion && verdict.vendedor_finalizou_com_pergunta ? '✅' : '❌'} Finalizou com convite (visita/aula experimental/agendamento)`
-    : `${verdict.trecho_cliente ? `💬 Cliente disse: "${verdict.trecho_cliente}"\n` : ''}` +
-      `❌ Objeção abandonada ou tratada com passividade sem contorno de valor`
+    : finalInfracao === 'lead_sem_resposta'
+      ? `⏳ Lead aguardando resposta há mais de ${Math.round(minutesSinceLast)} min\n` +
+        `❌ Nenhum atendente respondeu a mensagem ainda`
+      : `${verdict.trecho_cliente ? `💬 Cliente disse: "${verdict.trecho_cliente}"\n` : ''}` +
+        `❌ Objeção abandonada ou tratada com passividade sem contorno de valor`
 
   // =========================================================================
   // 1. Definição estrita das duas variáveis de texto distintas:
@@ -334,14 +365,15 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
 
   // A) Mensagem para o GESTOR (supervisor_phone)
   const mensagemGestor =
-    `🚨 *ConversIA • ${isProcess ? 'Falha de Processo Comercial' : 'Alerta de Venda em Risco'}*\n\n` +
+    `🚨 *ConversIA • ${isProcess ? 'Falha de Processo Comercial' : finalInfracao === 'lead_sem_resposta' ? 'Lead Parado sem Resposta' : 'Alerta de Venda em Risco'}*\n\n` +
     `👤 *Lead:* ${leadPhone}\n` +
     `🏋️ *Atendente:* ${sellerName}\n` +
     `📊 *Confiança:* ${confidence}%\n` +
-    `❌ *Falha:* ${falhaNome}\n` +
+    `❌ *Situação:* ${falhaNome}\n` +
     `📝 *Resumo:* ${resumo}\n\n` +
-    `📋 *Checklist:*\n${checklist}\n\n` +
-    (sugestao ? `🎯 *Sugestão de Resgate:*\n"${sugestao}"\n\n` : '') +
+    `📋 *Diagnóstico:*\n${checklist}\n\n` +
+    (sugestao ? `🎯 *Sugestão de Resgate/Atendimento:*\n"${sugestao}"\n\n` : '') +
+    (waDirectLink ? `📲 *Falar com o cliente agora:*\n${waDirectLink}\n\n` : '') +
     `👉 *Painel:* ${linkPainel}`
 
   // B) Mensagem para o VENDEDOR (seller_phone) - Tom pedagógico e encorajador de apoio
@@ -427,8 +459,9 @@ async function askAi(apiKey: string, ctx: {
 
   const activeRules = [
     rules.alert_on_dry_price && '- PANFLETAGEM (processo imediato): envio de preços/valores sem diagnóstico prévio do objetivo do cliente OU sem terminar com pergunta de convite/agendamento.',
-    rules.alert_on_price_unhandled && '- OBJEÇÃO IGNORADA (reativo): cliente manifestou resistência (preço, tempo, concorrente) e o atendente foi passivo, frio ou não contornou.',
+    rules.alert_on_price_unhandled && '- OBJEÇÃO IGNORADA (reativo): cliente manifestou resistência (preço, tempo, concorrente, distância) e o atendente foi passivo, frio ou não contornou.',
     rules.alert_on_drop_unhandled && '- DESISTÊNCIA PASSIVA (reativo): cliente declarou desistência e o atendente aceitou sem tentar reter.',
+    (rules.alert_on_unanswered_lead !== false) && '- LEAD SEM RESPOSTA (tempo excedido): o cliente enviou mensagem (primeiro contato, pergunta sobre planos/horários ou réplica) e o vendedor não respondeu no prazo.',
   ].filter(Boolean).join('\n')
 
   const history = messages.map((m, i) => {
@@ -450,12 +483,15 @@ Se o vendedor violar o item 1 ou 2, classifique IMEDIATAMENTE como "panfletagem"
 GATILHO DE OBJEÇÃO (REATIVO):
 Se o cliente apresentou resistência explícita ("achei caro", "concorrente é mais barato", "sem tempo", "vou ver depois") e o vendedor foi frio, passivo ou não respondeu, classifique como "objecao_ignorada".
 
+GATILHO DE LEAD SEM RESPOSTA / PARADO:
+Se a última mensagem foi do cliente (seja primeiro contato ou dúvida) e o vendedor ainda não respondeu, classifique como "lead_sem_resposta".
+
 AVALIE RIGOROSAMENTE CADA CAMPO:
 1. "houve_investigacao_previa": boolean - true se o objetivo ou necessidade do cliente já havia sido identificado antes do vendedor mandar valores.
 2. "vendedor_enviou_precos": boolean - true se o vendedor informou preços, valores numéricos de planos ou tabela de pagamento nas mensagens com ">>".
 3. "vendedor_finalizou_com_pergunta": boolean - true se a última mensagem do vendedor termina com pergunta de avanço comercial (agendar visita, aula experimental, matrícula). Perguntas vazias como "tudo bem?", "qualquer dúvida avisa" = false.
-4. "infracao_detectada": "panfletagem" | "objecao_ignorada" | "desistencia_passiva" | "nenhuma".
-   Prioridade: objecao_ignorada / desistencia_passiva > panfletagem.
+4. "infracao_detectada": "panfletagem" | "objecao_ignorada" | "desistencia_passiva" | "lead_sem_resposta" | "nenhuma".
+   Prioridade: objecao_ignorada / desistencia_passiva > panfletagem > lead_sem_resposta.`
 5. "disparar_alerta": boolean - true se houver infração comprovada de acordo com as regras ativas.
 6. "confianca": number de 0 a 100 indicando sua certeza. Mantenha >= 85 se a regra objetiva for cumprida.
 7. "motivo_resumido": string - Frase concisa para o gestor descrevendo a falha exata (ex: "Vendedor passou valores do plano anual sem investigar o objetivo do aluno").

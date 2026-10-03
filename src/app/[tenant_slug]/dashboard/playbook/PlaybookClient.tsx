@@ -431,6 +431,25 @@ Fatores que geram perda de pontos:
                       </p>
                     </div>
                   </label>
+
+                  {/* Trigger 4 */}
+                  <label className="flex items-start gap-3.5 p-4 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/20 transition-all cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={alertRules.alert_on_unanswered_lead !== false}
+                      onChange={(e) => setAlertRules({ ...alertRules, alert_on_unanswered_lead: e.target.checked })}
+                      className="mt-1 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-800">Lead Aguardando Resposta (Primeiro Contato ou Vácuo)</span>
+                        <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">Tempo de Espera</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        O lead enviou mensagem (primeiro contato com interesse em planos, ou fez uma pergunta no meio da conversa) e o atendente não respondeu dentro do tempo de tolerância.
+                      </p>
+                    </div>
+                  </label>
                 </div>
 
                 {/* Configuration: Threshold, Wait Time, Gestor and Vendedor Phones */}
