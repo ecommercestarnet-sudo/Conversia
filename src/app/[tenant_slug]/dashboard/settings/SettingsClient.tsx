@@ -32,6 +32,8 @@ interface Operator {
   id: string;
   company_id: string;
   name: string;
+  phone?: string | null;
+  whatsapp?: string | null;
   role: string | null;
   work_hours: string | null;
   created_at: string;
@@ -69,6 +71,7 @@ export default function SettingsClient({ company, initialOperators, lastStatusLo
 
   // Form states - Operator
   const [name, setName] = useState('');
+  const [operatorWhatsapp, setOperatorWhatsapp] = useState('');
   const [role, setRole] = useState('');
   const [workHours, setWorkHours] = useState('');
 
@@ -121,9 +124,13 @@ export default function SettingsClient({ company, initialOperators, lastStatusLo
     setIsSavingOperator(true);
     setNotification(null);
 
+    const cleanedOpPhone = operatorWhatsapp.replace(/[^0-9]/g, '');
+
     const result = await saveOperator({
       company_id: company?.id || '',
       name: name.trim(),
+      whatsapp: cleanedOpPhone || undefined,
+      phone: cleanedOpPhone || undefined,
       role: role.trim() || undefined,
       work_hours: workHours.trim() || undefined
     });
@@ -133,6 +140,7 @@ export default function SettingsClient({ company, initialOperators, lastStatusLo
     if (result.success) {
       setNotification({ type: 'success', message: 'Operador cadastrado com sucesso!' });
       setName('');
+      setOperatorWhatsapp('');
       setRole('');
       setWorkHours('');
       router.refresh();
@@ -402,6 +410,25 @@ export default function SettingsClient({ company, initialOperators, lastStatusLo
 
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                        WhatsApp do Vendedor <span className="text-[10px] text-slate-400 font-normal">(Para mentoria/resgate direto)</span>
+                      </label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Ex: 5585999990000"
+                          value={operatorWhatsapp}
+                          onChange={(e) => setOperatorWhatsapp(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors shadow-sm"
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Recebe dicas rápidas e mensagens de mentoria prontas para resgate quando houver falhas.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
                         Cargo / Função <span className="text-[10px] text-slate-400 font-normal">(Opcional)</span>
                       </label>
                       <div className="relative">
@@ -464,6 +491,12 @@ export default function SettingsClient({ company, initialOperators, lastStatusLo
                       <div className="min-w-0">
                         <h3 className="text-xs font-bold text-slate-800 truncate">{op.name}</h3>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[10px] text-slate-500">
+                          {(op.whatsapp || op.phone) && (
+                            <span className="flex items-center gap-1 text-emerald-600 font-semibold">
+                              <Phone className="w-3 h-3 text-emerald-500" />
+                              {op.whatsapp || op.phone}
+                            </span>
+                          )}
                           {op.role && (
                             <span className="flex items-center gap-1">
                               <Briefcase className="w-3 h-3 text-slate-400" />

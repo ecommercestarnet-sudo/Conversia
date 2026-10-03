@@ -69,6 +69,8 @@ interface Conversation {
 interface Operator {
   id: string;
   name: string;
+  phone?: string | null;
+  whatsapp?: string | null;
   role: string | null;
   work_hours: string | null;
 }

@@ -9,6 +9,8 @@ export interface AlertRules {
   alert_on_drop_unhandled: boolean;
   min_confidence_score: number;
   wait_minutes_before_alert?: number;
+  cooldown_minutes?: number;
+  modo_teste?: boolean;
   alert_phone_override?: string;
 }
 

@@ -62,7 +62,7 @@ export default async function DashboardPage({ params }: PageProps) {
   // Fetch operators associated with this organization
   const { data: operators, error: operatorsError } = await supabase
     .from('operators')
-    .select('id, name, role, work_hours')
+    .select('id, name, phone, whatsapp, role, work_hours')
     .eq('company_id', org.id)
     .order('name');
 

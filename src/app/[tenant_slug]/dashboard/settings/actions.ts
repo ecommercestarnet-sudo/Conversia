@@ -14,6 +14,8 @@ export interface OperatorFormData {
   id?: string;
   company_id: string;
   name: string;
+  phone?: string;
+  whatsapp?: string;
   role?: string;
   work_hours?: string;
 }
@@ -63,9 +65,13 @@ export async function saveOperator(data: OperatorFormData) {
 
     const supabase = await createClient();
 
+    const cleanPhone = (data.whatsapp || data.phone || '').replace(/\D/g, '');
+
     const operatorData: any = {
       company_id: data.company_id,
       name: data.name,
+      phone: cleanPhone || null,
+      whatsapp: cleanPhone || null,
       role: data.role || null,
       work_hours: data.work_hours || null,
     };

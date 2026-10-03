@@ -82,6 +82,8 @@ export default function PlaybookClient({ company, initialPlaybook, lastStatusLog
     alert_on_drop_unhandled: true,
     min_confidence_score: 85,
     wait_minutes_before_alert: 5,
+    cooldown_minutes: 15,
+    modo_teste: false,
     alert_phone_override: ''
   };
   const [alertRules, setAlertRules] = useState({
@@ -476,7 +478,7 @@ Fatores que geram perda de pontos:
 
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      WhatsApp para Alertas
+                      WhatsApp do Gestor (Supervisor)
                     </label>
                     <p className="text-[11px] text-slate-500 mb-2">
                       Em branco usa o WhatsApp do Dono cadastrado.
@@ -488,6 +490,52 @@ Fatores que geram perda de pontos:
                       onChange={(e) => setAlertRules({ ...alertRules, alert_phone_override: e.target.value })}
                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                     />
+                  </div>
+                </div>
+
+                {/* Anti-spam Trava & Modo Teste */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center justify-between gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-0.5">
+                        Intervalo Mínimo de Respiro (Cooldown)
+                      </label>
+                      <p className="text-[11px] text-slate-500">
+                        Tempo mínimo entre notificações na mesma conversa (Anti-spam inteligente).
+                      </p>
+                    </div>
+                    <select
+                      value={alertRules.cooldown_minutes ?? 15}
+                      onChange={(e) => setAlertRules({ ...alertRules, cooldown_minutes: Number(e.target.value) })}
+                      className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-emerald-500 shrink-0 font-medium"
+                    >
+                      <option value={5}>5 minutos</option>
+                      <option value={10}>10 minutos</option>
+                      <option value={15}>15 minutos (Padrão)</option>
+                      <option value={30}>30 minutos</option>
+                      <option value={60}>1 hora</option>
+                    </select>
+                  </div>
+
+                  <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-200/80 flex items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-amber-900">🧪 Modo Teste / Homologação</span>
+                        <span className="text-[9px] bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded font-bold">Dev</span>
+                      </div>
+                      <p className="text-[11px] text-amber-700 mt-0.5">
+                        Ignora travas de 1 alerta por tipo e cooldown de 15 min para permitir validações manuais contínuas.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={alertRules.modo_teste ?? false}
+                        onChange={(e) => setAlertRules({ ...alertRules, modo_teste: e.target.checked })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                    </label>
                   </div>
                 </div>
               </div>
