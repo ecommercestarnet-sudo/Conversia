@@ -284,84 +284,92 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
 
   // Prepara os textos de apoio e sugestão pronta
   const isProcess = finalInfracao === 'panfletagem'
-  const acaoSugerida = verdict.o_que_mandar_agora || verdict.acao_resgate || ''
-  const dicaCoach = verdict.dica_treinador || (isProcess
-    ? 'Descubra a dor e o objetivo do aluno antes de falar de valores, e finalize sempre convidando para uma aula experimental.'
-    : 'Acolha a objeção com empatia, mostre o valor diferenciado dos nossos serviços e convide para viver a experiência.')
-  const porQueAjustar = verdict.por_que_ajustar || (isProcess
-    ? 'Passar preço sem diagnóstico transforma o seu serviço em commodity e reduz as chances de fechamento.'
-    : 'Responder de prontidão com segurança e alternativa reverte até 70% das objeções imediatas.')
+  const falhaNome = LABEL_BY_INFRACAO[finalInfracao]
+  const sugestao = verdict.o_que_mandar_agora || verdict.acao_resgate || ''
+  const resumo = verdict.motivo_resumido || '-'
+  const leadPhone = conv.client_phone || 'Cliente'
+  const sellerName = operatorName || 'Atendente'
+  const confidence = verdict.confianca || 85
 
   const baseUrl = Deno.env.get('NEXT_PUBLIC_APP_URL') || 'https://conversia.app'
   const tenantSlug = org.slug || 'empresa'
-  const panelUrl = `${baseUrl}/${tenantSlug}/dashboard`
+  const linkPainel = `${baseUrl}/${tenantSlug}/dashboard`
+
+  const checklist = isProcess
+    ? `${verdict.houve_investigacao_previa ? '✅' : '❌'} Identificou o objetivo antes do preço\n` +
+      `${lastAgentEndsWithQuestion && verdict.vendedor_finalizou_com_pergunta ? '✅' : '❌'} Finalizou com convite (visita/aula experimental/agendamento)`
+    : `${verdict.trecho_cliente ? `💬 Cliente disse: "${verdict.trecho_cliente}"\n` : ''}` +
+      `❌ Objeção abandonada ou tratada com passividade sem contorno de valor`
 
   // =========================================================================
-  // PAYLOAD A: Disparo para o GESTOR (supervisor_phone)
-  // Tom: Auditoria gerencial direta
+  // 1. Definição estrita das duas variáveis de texto distintas:
   // =========================================================================
-  const checklistGestor = isProcess
-    ? `\n📋 *Checklist de Preço:*\n` +
-      `${verdict.houve_investigacao_previa ? '✅' : '❌'} Identificou objetivo antes do valor\n` +
-      `${lastAgentEndsWithQuestion && verdict.vendedor_finalizou_com_pergunta ? '✅' : '❌'} Convidou para visita/aula experimental\n`
-    : ''
 
-  const textoGestor =
+  // A) Mensagem para o GESTOR (supervisor_phone)
+  const mensagemGestor =
     `🚨 *ConversIA • ${isProcess ? 'Falha de Processo Comercial' : 'Alerta de Venda em Risco'}*\n\n` +
-    `👤 *Lead / Cliente:* ${conv.client_phone}\n` +
-    `🏋️ *Atendente:* ${operatorName}\n` +
-    `📊 *Confiança da IA:* ${verdict.confianca}%\n\n` +
-    `❌ *Falha Detectada:* ${LABEL_BY_INFRACAO[finalInfracao]}\n` +
-    (verdict.trecho_cliente && !isProcess ? `💬 *O cliente disse:* "${verdict.trecho_cliente}"\n` : '') +
-    `📝 *Resumo da Falha:* ${verdict.motivo_resumido || '-'}\n` +
-    checklistGestor +
-    (acaoSugerida ? `\n🎯 *Sugestão de Resgate (Copia e Cola):*\n"${acaoSugerida}"\n` : '') +
-    `\n👉 *Visualizar no Painel:* ${panelUrl}`
+    `👤 *Lead:* ${leadPhone}\n` +
+    `🏋️ *Atendente:* ${sellerName}\n` +
+    `📊 *Confiança:* ${confidence}%\n` +
+    `❌ *Falha:* ${falhaNome}\n` +
+    `📝 *Resumo:* ${resumo}\n\n` +
+    `📋 *Checklist:*\n${checklist}\n\n` +
+    (sugestao ? `🎯 *Sugestão de Resgate:*\n"${sugestao}"\n\n` : '') +
+    `👉 *Painel:* ${linkPainel}`
+
+  // B) Mensagem para o VENDEDOR (seller_phone) - Tom pedagógico de mentoria, sem termos punitivos
+  const mensagemVendedor = isProcess
+    ? `💡 *Dica Rápida ConversIA*\n\n` +
+      `Notei que passou os preços antes de investigar o objetivo do aluno ou sem finalizar com um convite.\n\n` +
+      `🎯 *O que mandar agora para salvar a conversa:*\n` +
+      `"${sugestao}"`
+    : `💡 *Dica Rápida ConversIA*\n\n` +
+      `O cliente demonstrou uma objeção ("${verdict.trecho_cliente || 'achou caro / vai pensar'}"). Não deixe a conversa esfriar!\n\n` +
+      `🎯 *O que mandar agora para salvar a conversa:*\n` +
+      `"${sugestao}"`
 
   // =========================================================================
-  // PAYLOAD B: Disparo para o VENDEDOR (seller_phone)
-  // Tom: Educacional, amigável, mentoria positiva (sem palavras punitivas)
+  // 2. Envios da Evolution API (/message/sendText):
   // =========================================================================
-  const textoVendedor =
-    `👋 *Olá, ${operatorName}! Bora resgatar mais uma venda?*\n\n` +
-    `💡 *Dica Rápida do Treinador:*\n${dicaCoach}\n\n` +
-    `🚀 *Por que ajustar isso agora:*\n${porQueAjustar}\n\n` +
-    `🎯 *O que mandar agora para o cliente (${conv.client_phone}):*\n` +
-    `"${acaoSugerida}"\n\n` +
-    `_Copie a mensagem acima, ajuste com seu toque e envie agora para retomar o controle do atendimento!_ 💪`
 
-  // Disparo 1: POST para o GESTOR
+  // A) Disparo para o GESTOR (supervisor_phone) -> mensagemGestor
+  console.log(`${tag} Enviando mensagemGestor para ${cleanSupervisor}...`)
   const supervisorResp = await fetch(`${opts.evolutionUrl.replace(/\/$/, '')}/message/sendText/${org.evolution_instance_name}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: opts.evolutionKey },
-    body: JSON.stringify({ number: cleanSupervisor, text: textoGestor }),
+    body: JSON.stringify({ number: cleanSupervisor, text: mensagemGestor }),
   })
 
   if (!supervisorResp.ok) {
-    console.error(`${tag} Falha ao enviar alerta ao gestor (${supervisorResp.status}):`, await supervisorResp.text())
+    console.error(`${tag} Falha ao enviar mensagemGestor (${supervisorResp.status}):`, await supervisorResp.text())
   } else {
-    console.log(`${tag} Alerta gerencial '${finalInfracao}' enviado ao gestor (${cleanSupervisor}).`)
+    console.log(`${tag} Mensagem do GESTOR enviada com sucesso para ${cleanSupervisor}.`)
   }
 
-  // Disparo 2: POST para o VENDEDOR (se tiver número configurado e for diferente do gestor)
+  // B) Disparo para o VENDEDOR (seller_phone) -> mensagemVendedor
   if (sellerPhone && !sameNumber(sellerPhone, cleanSupervisor) && !sameNumber(sellerPhone, cleanClient)) {
     try {
+      console.log(`${tag} Enviando mensagemVendedor para ${sellerPhone}...`)
       const sellerResp = await fetch(`${opts.evolutionUrl.replace(/\/$/, '')}/message/sendText/${org.evolution_instance_name}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: opts.evolutionKey },
-        body: JSON.stringify({ number: sellerPhone, text: textoVendedor }),
+        body: JSON.stringify({ number: sellerPhone, text: mensagemVendedor }),
       })
 
       if (!sellerResp.ok) {
-        console.error(`${tag} Falha ao enviar mentoria ao vendedor (${sellerResp.status}):`, await sellerResp.text())
+        console.error(`${tag} Falha ao enviar mensagemVendedor (${sellerResp.status}):`, await sellerResp.text())
       } else {
-        console.log(`${tag} Mentoria de apoio enviada com sucesso ao vendedor (${sellerPhone}).`)
+        console.log(`${tag} Mensagem do VENDEDOR enviada com sucesso para ${sellerPhone}.`)
       }
     } catch (sellerErr) {
       console.error(`${tag} Erro de requisição no envio ao vendedor:`, sellerErr)
     }
   } else {
-    console.log(`${tag} Vendedor sem número de WhatsApp cadastrado ou igual ao do gestor. Disparo individual ao vendedor dispensado.`)
+    if (!sellerPhone) {
+      console.log(`${tag} Atendente sem WhatsApp cadastrado. Apenas mensagemGestor foi despachada.`)
+    } else if (sameNumber(sellerPhone, cleanSupervisor)) {
+      console.log(`${tag} WhatsApp do atendente é idêntico ao do gestor (${cleanSupervisor}). O gestor já recebeu a mensagemGestor.`)
+    }
   }
 
   // Atualiza banco de dados com registro do alerta e timestamp para cooldown
