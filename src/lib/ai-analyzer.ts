@@ -711,6 +711,9 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
       else if (tipo === 'PRECO_SECO_SEM_FECHAMENTO') tipoLabel = 'Envio de Preço sem Investigação';
       else if (tipo === 'DESISTENCIA_SEM_RETENCAO') tipoLabel = 'Desistência sem Tentativa de Retenção';
 
+      const clientDigits = clientPhone.replace(/[^0-9]/g, '');
+      const waDirectLink = `https://wa.me/${clientDigits}`;
+
       const alertText = `🚨 *ConversIA • Alerta de Venda em Risco*\n\n` +
         `👤 *Cliente:* ${clientPhone}\n` +
         `🏋️ *Atendente:* ${operatorName}\n\n` +
@@ -719,6 +722,7 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
         `🤦 *Falha do atendente:* ${alertaGestor.falha_vendedor || 'Não tratou a objeção conforme orientado no Playbook.'}\n\n` +
         `🎯 *Sugestão de Resgate Imediato:*\n` +
         `"${alertaGestor.acao_resgate || 'Entre em contato e ofereça uma condição de aula experimental ou desconto exclusivo.'}"\n\n` +
+        `📲 *Falar com o cliente agora:*\n${waDirectLink}\n\n` +
         `👉 _Acesse o painel do ConversIA para auditar o atendimento completo._`;
 
       // 3. Dispatch alert via Evolution API

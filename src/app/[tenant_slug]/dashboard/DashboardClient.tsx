@@ -102,6 +102,99 @@ export default function DashboardClient({ initialConversations, organization, la
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [isTeamRankingOpen, setIsTeamRankingOpen] = useState(false);
+
+  // Helper: Detect if conversation is waiting for operator response & elapsed minutes
+  const getWaitInfo = (conv: Conversation): { isWaiting: boolean; elapsedMinutes: number; text: string | null } => {
+    if (!conv.messages || conv.messages.length === 0) {
+      return { isWaiting: false, elapsedMinutes: 0, text: null };
+    }
+    const sorted = [...conv.messages].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    const lastMsg = sorted[sorted.length - 1];
+    const isClient = lastMsg.sender_type === 'client' || lastMsg.sender_type === 'cliente';
+    if (!isClient) {
+      return { isWaiting: false, elapsedMinutes: 0, text: null };
+    }
+    const elapsedMinutes = Math.floor((Date.now() - new Date(lastMsg.created_at).getTime()) / (1000 * 60));
+    let text = null;
+    if (elapsedMinutes >= 15) {
+      if (elapsedMinutes >= 60) {
+        const hours = Math.floor(elapsedMinutes / 60);
+        text = `Cliente esperando há ${hours}h`;
+      } else {
+        text = `Cliente esperando há ${elapsedMinutes}min`;
+      }
+    }
+    return { isWaiting: true, elapsedMinutes, text };
+  };
+
+  // Team Ranking & Performance Metrics
+  const teamRanking = useMemo(() => {
+    const stats: Record<string, {
+      operatorId: string;
+      name: string;
+      role: string;
+      total: number;
+      emRisco: number;
+      perdidas: number;
+      convertidas: number;
+      totalScore: number;
+      scoreCount: number;
+    }> = {};
+
+    // Initialize with registered operators
+    operators.forEach(op => {
+      stats[op.id] = {
+        operatorId: op.id,
+        name: op.name,
+        role: op.role || 'Vendedor',
+        total: 0,
+        emRisco: 0,
+        perdidas: 0,
+        convertidas: 0,
+        totalScore: 0,
+        scoreCount: 0,
+      };
+    });
+
+    // Also an unassigned slot
+    stats['unassigned'] = {
+      operatorId: 'unassigned',
+      name: 'Sem Atendente',
+      role: 'Fila Geral',
+      total: 0,
+      emRisco: 0,
+      perdidas: 0,
+      convertidas: 0,
+      totalScore: 0,
+      scoreCount: 0,
+    };
+
+    initialConversations.forEach(conv => {
+      const opKey = conv.operator_id && stats[conv.operator_id] ? conv.operator_id : 'unassigned';
+      stats[opKey].total += 1;
+
+      const { status } = getCommercialStatus(conv);
+      if (status === 'em_risco') stats[opKey].emRisco += 1;
+      else if (status === 'perdida') stats[opKey].perdidas += 1;
+      else if (status === 'convertida') stats[opKey].convertidas += 1;
+
+      const analysis = getAnalysis(conv);
+      if (analysis) {
+        stats[opKey].totalScore += analysis.overall_score;
+        stats[opKey].scoreCount += 1;
+      }
+    });
+
+    return Object.values(stats)
+      .filter(s => s.operatorId !== 'unassigned' || s.total > 0)
+      .map(s => ({
+        ...s,
+        avgScore: s.scoreCount > 0 ? Math.round(s.totalScore / s.scoreCount) : 0,
+        conversionRate: s.total > 0 ? Math.round((s.convertidas / s.total) * 100) : 0,
+      }))
+      .sort((a, b) => b.convertidas - a.convertidas || b.avgScore - a.avgScore);
+  }, [initialConversations, operators]);
 
   const handleSignOut = async () => {
     await logout();
@@ -200,7 +293,9 @@ export default function DashboardClient({ initialConversations, organization, la
       emRiscoCount,
       perdidasCount,
       convertidasCount,
-      topLossReason: topReasons.length > 0 ? topReasons[0] : 'Envio de preço sem qualificação',
+      topLossReason: topReasons.length > 0 
+        ? topReasons[0] 
+        : (perdidasCount > 0 ? 'Motivo sob análise' : 'Nenhuma perda registrada'),
     };
   }, [initialConversations]);
 
@@ -356,6 +451,15 @@ export default function DashboardClient({ initialConversations, organization, la
             </div>
             
             <button
+              onClick={() => setIsTeamRankingOpen(true)}
+              className="px-3.5 py-2 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:text-slate-900 transition-all flex items-center gap-2 cursor-pointer shrink-0 shadow-sm"
+              title="Ver Desempenho e Ranking do Time"
+            >
+              <Users className="w-4 h-4 text-emerald-600" />
+              <span>Desempenho do Time</span>
+            </button>
+
+            <button
               onClick={() => router.push(`/${tenantSlug}/dashboard/playbook`)}
               className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-lg text-sm font-medium text-white transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-500/10 shrink-0"
             >
@@ -483,7 +587,7 @@ export default function DashboardClient({ initialConversations, organization, la
               </div>
             </div>
             <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-              {metrics.analyzedCount > 0 ? `${Math.round((metrics.convertidasCount / metrics.analyzedCount) * 100)}% conv.` : '0%'}
+              {metrics.analyzedCount > 0 ? `${Math.round((metrics.convertidasCount / metrics.analyzedCount) * 100)}% conv.` : '0% conv.'}
             </span>
           </div>
 
@@ -495,7 +599,10 @@ export default function DashboardClient({ initialConversations, organization, la
               </div>
               <div className="min-w-0">
                 <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Maior Causa de Perda</div>
-                <div className="text-xs font-bold text-slate-800 truncate mt-0.5" title={metrics.topLossReason}>
+                <div 
+                  className={`text-xs font-bold truncate mt-0.5 ${metrics.perdidasCount === 0 ? 'text-slate-400 font-medium italic' : 'text-slate-800'}`} 
+                  title={metrics.topLossReason}
+                >
                   {metrics.topLossReason}
                 </div>
               </div>
@@ -597,6 +704,7 @@ export default function DashboardClient({ initialConversations, organization, la
                   const assignedOperator = operators.find(op => op.id === conv.operator_id);
                   const { status, motivo } = getCommercialStatus(conv);
                   const badge = getCommercialBadge(status);
+                  const waitInfo = getWaitInfo(conv);
 
                   return (
                     <div
@@ -620,6 +728,14 @@ export default function DashboardClient({ initialConversations, organization, la
                           </span>
                         </div>
                       </div>
+
+                      {/* Alerta de Tempo de Espera do Cliente */}
+                      {waitInfo.text && (
+                        <div className="mb-2 px-2 py-1 bg-amber-50/90 border border-amber-300 rounded-lg text-[10px] text-amber-900 font-semibold flex items-center gap-1.5">
+                          <Clock className="w-3 h-3 text-amber-600 animate-pulse shrink-0" />
+                          <span className="truncate">{waitInfo.text}</span>
+                        </div>
+                      )}
 
                       {/* Motivo da perda ou Risco destacado */}
                       {motivo && (status === 'em_risco' || status === 'perdida') && (
@@ -726,6 +842,25 @@ export default function DashboardClient({ initialConversations, organization, la
                     )}
                   </div>
                 </div>
+
+                {/* Banner de Espera / Atenção ao Tempo de Resposta */}
+                {(() => {
+                  const waitInfo = getWaitInfo(selectedConversation);
+                  if (!waitInfo.text) return null;
+                  return (
+                    <div className="bg-amber-100/80 border-b border-amber-200 px-6 py-2 flex items-center justify-between text-xs text-amber-900 font-medium">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-amber-700 animate-pulse shrink-0" />
+                        <span>
+                          <strong>Atenção ao tempo de resposta:</strong> {waitInfo.text}.
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-amber-800 bg-amber-200/80 px-2 py-0.5 rounded-md">
+                        Responder no WhatsApp
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {/* Messages Timeline (WhatsApp style layout) */}
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 bg-[#efeae2] custom-scrollbar">
@@ -1097,6 +1232,115 @@ export default function DashboardClient({ initialConversations, organization, la
             </div>
           </div>
           
+        </div>
+      )}
+
+      {/* Modal: Ranking e Desempenho do Time */}
+      {isTeamRankingOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b border-slate-200 px-6 py-4 bg-slate-50/80">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-emerald-50 text-emerald-600 rounded-lg border border-emerald-500/20">
+                  <Users className="w-5 h-5" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">Desempenho e Ranking do Time</h2>
+                  <p className="text-[11px] text-slate-500">Métricas comerciais consolidadas por atendente</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsTeamRankingOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer text-lg font-bold flex items-center justify-center w-7 h-7"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              {teamRanking.length === 0 ? (
+                <div className="text-center py-8 text-slate-400 text-xs">
+                  Nenhum atendente cadastrado ou atendimentos registrados ainda.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {teamRanking.map((member, index) => (
+                    <div 
+                      key={member.operatorId}
+                      className="border border-slate-200 rounded-xl p-4 bg-white hover:border-emerald-300 transition-all shadow-xs"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black ${
+                            index === 0 ? 'bg-amber-100 text-amber-700 border border-amber-300' :
+                            index === 1 ? 'bg-slate-200 text-slate-700' :
+                            index === 2 ? 'bg-amber-50 text-amber-800' :
+                            'bg-slate-100 text-slate-500'
+                          }`}>
+                            {index + 1}º
+                          </span>
+                          <div>
+                            <h3 className="text-xs font-bold text-slate-800">{member.name}</h3>
+                            <span className="text-[10px] text-slate-400 font-medium">{member.role}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              setOperatorFilter(member.operatorId);
+                              setIsTeamRankingOpen(false);
+                            }}
+                            className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200 cursor-pointer transition-colors"
+                          >
+                            Filtrar conversas ({member.total})
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Stat Counters Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 text-center">
+                        <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Atendimentos</div>
+                          <div className="text-sm font-black text-slate-800 mt-0.5">{member.total}</div>
+                        </div>
+                        <div className="bg-emerald-50/50 rounded-lg p-2 border border-emerald-100">
+                          <div className="text-[9px] font-bold text-emerald-700 uppercase tracking-wider">Ganhos / Fechados</div>
+                          <div className="text-sm font-black text-emerald-700 mt-0.5">{member.convertidas}</div>
+                        </div>
+                        <div className="bg-amber-50/50 rounded-lg p-2 border border-amber-100">
+                          <div className="text-[9px] font-bold text-amber-700 uppercase tracking-wider">Em Risco</div>
+                          <div className="text-sm font-black text-amber-700 mt-0.5">{member.emRisco}</div>
+                        </div>
+                        <div className="bg-rose-50/50 rounded-lg p-2 border border-rose-100">
+                          <div className="text-[9px] font-bold text-rose-700 uppercase tracking-wider">Perdidas</div>
+                          <div className="text-sm font-black text-rose-700 mt-0.5">{member.perdidas}</div>
+                        </div>
+                      </div>
+
+                      {/* Quality & Conversion Footer */}
+                      <div className="flex items-center justify-between mt-3 pt-2 text-[10px] text-slate-500 font-medium border-t border-slate-50">
+                        <span>Qualidade Comercial Média: <strong className="text-slate-800">{member.avgScore}%</strong></span>
+                        <span>Taxa de Conversão: <strong className="text-emerald-600">{member.conversionRate}%</strong></span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="border-t border-slate-200 px-6 py-3 bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setIsTeamRankingOpen(false)}
+                className="px-4 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-xs font-bold text-slate-700 rounded-lg cursor-pointer transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
