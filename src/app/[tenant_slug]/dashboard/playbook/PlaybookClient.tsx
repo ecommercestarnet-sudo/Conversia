@@ -84,7 +84,8 @@ export default function PlaybookClient({ company, initialPlaybook, lastStatusLog
     wait_minutes_before_alert: 5,
     cooldown_minutes: 15,
     modo_teste: false,
-    alert_phone_override: ''
+    alert_phone_override: '',
+    default_seller_phone: ''
   };
   const [alertRules, setAlertRules] = useState({
     ...defaultAlertRules,
@@ -432,8 +433,8 @@ Fatores que geram perda de pontos:
                   </label>
                 </div>
 
-                {/* Configuration: Threshold, Wait Time and Phone */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                {/* Configuration: Threshold, Wait Time, Gestor and Vendedor Phones */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
                       Nível de Rigor da IA
@@ -481,13 +482,29 @@ Fatores que geram perda de pontos:
                       WhatsApp do Gestor (Supervisor)
                     </label>
                     <p className="text-[11px] text-slate-500 mb-2">
-                      Em branco usa o WhatsApp do Dono cadastrado.
+                      Recebe relatório analítico e auditoria de processo.
                     </p>
                     <input
                       type="text"
-                      placeholder="Ex: 5585999990000"
+                      placeholder="Ex: 5585999990000 (Dono)"
                       value={alertRules.alert_phone_override || ''}
                       onChange={(e) => setAlertRules({ ...alertRules, alert_phone_override: e.target.value })}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      WhatsApp do Vendedor (Padrão / Testes)
+                    </label>
+                    <p className="text-[11px] text-slate-500 mb-2">
+                      Recebe apenas a dica rápida pedagógica (se não atribuído).
+                    </p>
+                    <input
+                      type="text"
+                      placeholder="Ex: 5585988887777 (Vendedor)"
+                      value={alertRules.default_seller_phone || ''}
+                      onChange={(e) => setAlertRules({ ...alertRules, default_seller_phone: e.target.value })}
                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                     />
                   </div>

@@ -12,6 +12,7 @@ export interface AlertRules {
   cooldown_minutes?: number;
   modo_teste?: boolean;
   alert_phone_override?: string;
+  default_seller_phone?: string;
 }
 
 export interface PlaybookFormData {

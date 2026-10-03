@@ -29,6 +29,7 @@ interface AlertRules {
   cooldown_minutes?: number
   modo_teste?: boolean
   alert_phone_override?: string
+  default_seller_phone?: string
 }
 
 interface AiVerdict {
@@ -63,6 +64,7 @@ const DEFAULT_RULES: AlertRules = {
   cooldown_minutes: 15,
   modo_teste: false,
   alert_phone_override: '',
+  default_seller_phone: '',
 }
 
 // Detecta valores monetários: "R$ 189", "189,90", "189 reais", "por mês"
@@ -279,6 +281,28 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
       if (op.name) operatorName = op.name
       const opRaw = op.whatsapp || op.phone
       if (opRaw) sellerPhone = String(opRaw).replace(/\D/g, '')
+    }
+  }
+
+  // Se o lead ainda não tem atendente atribuído na conversa (comum nos primeiros minutos):
+  // 1º: Verifica se foi definido um WhatsApp do Vendedor Padrão no Playbook
+  // 2º: Ou busca o primeiro operador da equipe que possua WhatsApp cadastrado
+  if (!sellerPhone) {
+    if (rules.default_seller_phone && rules.default_seller_phone.trim()) {
+      sellerPhone = rules.default_seller_phone.replace(/\D/g, '')
+    } else {
+      const { data: fallbackOp } = await supabase
+        .from('operators')
+        .select('name, phone, whatsapp')
+        .eq('company_id', conv.organization_id)
+        .or('whatsapp.is.not.null,phone.is.not.null')
+        .limit(1)
+        .maybeSingle()
+      if (fallbackOp) {
+        if (operatorName === 'Não atribuído' && fallbackOp.name) operatorName = fallbackOp.name
+        const opRaw = fallbackOp.whatsapp || fallbackOp.phone
+        if (opRaw) sellerPhone = String(opRaw).replace(/\D/g, '')
+      }
     }
   }
 
