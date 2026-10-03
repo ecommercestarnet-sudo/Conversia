@@ -284,23 +284,26 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     }
   }
 
-  // Se o lead ainda não tem atendente atribuído na conversa (comum nos primeiros minutos):
-  // 1º: Verifica se foi definido um WhatsApp do Vendedor Padrão no Playbook
-  // 2º: Ou busca o primeiro operador da equipe que possua WhatsApp cadastrado
-  if (!sellerPhone) {
-    if (rules.default_seller_phone && rules.default_seller_phone.trim()) {
+  if (!sellerPhone || operatorName === 'Não atribuído') {
+    if (!sellerPhone && rules.default_seller_phone && rules.default_seller_phone.trim()) {
       sellerPhone = rules.default_seller_phone.replace(/\D/g, '')
-    } else {
-      const { data: fallbackOp } = await supabase
-        .from('operators')
-        .select('name, phone, whatsapp')
-        .eq('company_id', conv.organization_id)
-        .or('whatsapp.is.not.null,phone.is.not.null')
-        .limit(1)
-        .maybeSingle()
-      if (fallbackOp) {
-        if (operatorName === 'Não atribuído' && fallbackOp.name) operatorName = fallbackOp.name
-        const opRaw = fallbackOp.whatsapp || fallbackOp.phone
+    }
+
+    // Busca operador cadastrado na empresa para nome e telefone de fallback
+    const { data: fallbackOps } = await supabase
+      .from('operators')
+      .select('name, phone, whatsapp')
+      .eq('company_id', conv.organization_id)
+      .limit(5)
+
+    if (fallbackOps && fallbackOps.length > 0) {
+      // Prioriza o que tem whatsapp ou telefone
+      const opWithPhone = fallbackOps.find((o: any) => o.whatsapp || o.phone) || fallbackOps[0]
+      if (operatorName === 'Não atribuído' && opWithPhone.name) {
+        operatorName = opWithPhone.name
+      }
+      if (!sellerPhone) {
+        const opRaw = opWithPhone.whatsapp || opWithPhone.phone
         if (opRaw) sellerPhone = String(opRaw).replace(/\D/g, '')
       }
     }
