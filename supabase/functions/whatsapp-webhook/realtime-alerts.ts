@@ -66,7 +66,7 @@ const DEFAULT_RULES: AlertRules = {
   min_confidence_score: 85,
   wait_minutes_before_alert: 5,
   cooldown_minutes: 15,
-  modo_teste: false,
+  modo_teste: true,
   alert_phone_override: '',
   default_seller_phone: '',
 }
