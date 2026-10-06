@@ -504,8 +504,9 @@ CHECKLIST BINÁRIO OBRIGATÓRIO DE ENVIO DE PREÇO (GATILHO DE PROCESSO IMEDIATO
 2. Toda mensagem contendo preço/valores DEVE obrigatoriamente terminar com uma pergunta de convite (visita à academia, agendamento de aula experimental ou matrícula).
 Se o vendedor violar o item 1 ou 2 em um contexto de VENDA, classifique como "panfletagem", mesmo sem objeção do cliente e sem a conversa ter esfriado.
 
-GATILHO DE OBJEÇÃO (REATIVO):
-Se o cliente em negociação apresentou resistência explícita ("achei caro", "concorrente é mais barato", "sem tempo", "vou ver depois") e o vendedor foi frio, passivo ou não respondeu, classifique como "objecao_ignorada".
+GATILHO DE RESISTÊNCIA, CANCELAMENTO E DESISTÊNCIA PASSIVA (REATIVO):
+Considere infração grave ("desistencia_passiva" ou "objecao_ignorada") sempre que o lead apresentar QUALQUER barreira, objeção, cancelamento ou desculpa (seja distância como "é muito longe", falta de tempo, preço/caro, desânimo, imprevisto de última hora, chuva, concorrente) e o atendente aceitar passivamente (ex: "entendo", "se mudar de ideia avisa", "tudo bem", "ok", "estamos à disposição", "qualquer coisa me chama") SEM tentar pelo menos uma alternativa ativa de retenção ou solução (ex: flexibilizar dia/horário, propor aula no sábado, reforçar benefício da visita sem compromisso, acolher a dificuldade e oferecer solução).
+Toda desistência ou cancelamento aceito passivamente sem tentativa de reter o lead DEVE disparar alerta ("disparar_alerta": true, "infracao_detectada": "desistencia_passiva").
 
 GATILHO DE LEAD SEM RESPOSTA / PARADO:
 Se a última mensagem foi do cliente (seja primeiro contato ou dúvida) e o vendedor ainda não respondeu, classifique como "lead_sem_resposta".
