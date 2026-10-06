@@ -66,7 +66,7 @@ const DEFAULT_RULES: AlertRules = {
   min_confidence_score: 85,
   wait_minutes_before_alert: 5,
   cooldown_minutes: 15,
-  modo_teste: true,
+  modo_teste: false,
   alert_phone_override: '',
   default_seller_phone: '',
 }
@@ -435,9 +435,7 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     `📝 *Resumo:* ${resumo}\n\n` +
     `📋 *Diagnóstico:*\n${checklist}\n\n` +
     `💡 *Dica de Condução:*\n${dicaConducao}\n\n` +
-    (sugestao ? `🎯 *Copie e envie agora para o cliente:*\n"${sugestao}"\n\n` : '') +
-    (waDirectLink ? `📲 *Falar com o cliente agora:*\n${waDirectLink}\n\n` : '') +
-    `👉 *Painel:* ${linkPainel}`
+    (sugestao ? `🎯 *Copie e envie agora para o cliente:*\n"${sugestao}"` : '').trimEnd()
 
   // =========================================================================
   // 2. Disparo Único para o GESTOR (supervisor_phone)
