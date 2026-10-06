@@ -303,6 +303,7 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     if (rules.alert_on_unanswered_lead !== false) {
       finalInfracao = 'lead_sem_resposta'
     }
+  } else if (processCandidate) {
     // Se a IA detectou que é cobrança/suporte/pós-venda ou não é contexto de venda, suprime panfletagem
     const ehCobrancaOuSuporte = verdict.eh_cobranca_ou_suporte === true || 
       verdict.contexto_atendimento === 'cobranca_financeiro' || 
