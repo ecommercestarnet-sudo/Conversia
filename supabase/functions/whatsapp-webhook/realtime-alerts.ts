@@ -183,12 +183,45 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     return
   }
 
-  // Nunca auditar a conversa com o próprio dono/gestor (evita loop infinito)
+  // Busca todos os números de atendentes/operadores da empresa para evitar loop/eco interno
+  const { data: allOps } = await supabase
+    .from('operators')
+    .select('phone, whatsapp')
+    .eq('company_id', conv.organization_id)
+
+  const internalNumbers = new Set<string>()
+  if (supervisorPhone) internalNumbers.add(String(supervisorPhone).replace(/\D/g, ''))
+  if (org.owner_whatsapp) internalNumbers.add(String(org.owner_whatsapp).replace(/\D/g, ''))
+  if (rules.default_seller_phone) internalNumbers.add(String(rules.default_seller_phone).replace(/\D/g, ''))
+
+  if (allOps && allOps.length > 0) {
+    allOps.forEach((op: any) => {
+      if (op.whatsapp) internalNumbers.add(String(op.whatsapp).replace(/\D/g, ''))
+      if (op.phone) internalNumbers.add(String(op.phone).replace(/\D/g, ''))
+    })
+  }
+
   const cleanClient = String(conv.client_phone || '').replace(/\D/g, '')
-  const cleanSupervisor = String(supervisorPhone).replace(/\D/g, '')
-  const cleanOwner = String(org.owner_whatsapp || '').replace(/\D/g, '')
-  const sameNumber = (a: string, b: string) => !!a && !!b && (a === b || a.endsWith(b) || b.endsWith(a))
-  if (sameNumber(cleanClient, cleanSupervisor) || sameNumber(cleanClient, cleanOwner)) return
+  const normalizeBR = (num: string) => {
+    // Normaliza telefone brasileiro tirando código do país 55 e nono dígito para comparação flexível
+    let n = num.replace(/^55/, '')
+    if (n.length === 11 && n[2] === '9') {
+      n = n.slice(0, 2) + n.slice(3) // 85991038188 -> 8591038188
+    }
+    return n
+  }
+
+  const clientNormalized = normalizeBR(cleanClient)
+  const isInternalParty = Array.from(internalNumbers).some(internal => {
+    if (!internal) return false
+    if (cleanClient === internal || cleanClient.endsWith(internal) || internal.endsWith(cleanClient)) return true
+    return normalizeBR(internal) === clientNormalized
+  })
+
+  if (isInternalParty) {
+    console.log(`${tag} Conversa ignorada: número do lead (${cleanClient}) pertence à equipe interna (gestor ou atendente).`)
+    return
+  }
 
   // 5. Contexto determinístico
   const last = messages[messages.length - 1]
