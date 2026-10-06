@@ -229,21 +229,26 @@ export async function analyzeConversation(conversationId: string, force: boolean
 ETAPA 1 — DIAGNÓSTICO COMERCIAL & DETECÇÃO DE RISCO/PERDA (OBRIGATÓRIO)
 ═══════════════════════════════════════════
 
-ANTES de avaliar qualquer critério, você DEVE analisar o desfecho comercial e o risco da negociação:
-1. "conversa_convertida": boolean -> TRUE se o cliente confirmou compra, matrícula, agendamento de visita/aula experimental, pagamento PIX ou aceitou formalmente a proposta comercial.
+ANTES de avaliar qualquer critério, você DEVE analisar a natureza do atendimento e o desfecho:
+0. "contexto_atendimento": "venda_prospeccao" | "cobranca_financeiro" | "suporte_duvida" | "pos_venda"
+   - Se for "cobranca_financeiro" (cobrança de mensalidade, parcela em aberto, boleto, renovação financeira):
+     * O atendente falar de valores monetários, parcelas ou dívidas NÃO é erro nem envio de preço seco; é o objeto da conversa.
+     * Critérios de "Investigação de Metas/Dores", "Ancoragem de Preço" e "Agendamento de Aula" DEVEM ser marcados como "N_A".
+     * O status_comercial não deve ser marcado como "perdida" ou "em_risco" por causa de valores enviados.
+1. "conversa_convertida": boolean -> TRUE se o cliente confirmou compra, matrícula, agendamento de visita/aula experimental, pagamento PIX ou aceitou formalmente a proposta comercial / confirmou acerto da cobrança.
 2. "status_comercial": "convertida" | "em_risco" | "perdida" | "em_andamento"
-   - "convertida": Fechamento ou agendamento confirmado com sucesso.
+   - "convertida": Fechamento, agendamento ou confirmação de pagamento/acerto concluído com sucesso.
    - "em_risco": Lead demonstrou interesse, mas está há horas sem resposta do vendedor, houve esfriamento após envio de preço seco, ou o cliente ficou com dúvida não sanada.
    - "perdida": Cliente declarou desistência ("muito caro", "fechei com outro", "não tenho interesse") OU vendedor abandonou o atendimento/falhou completamente.
-   - "em_andamento": Conversa ativa fluindo normalmente no funil.
-3. "motivo_perda": Se status for "perdida" ou "em_risco", especifique em 1 frase curta e objetiva o motivo principal (Ex: "Preço enviado sem qualificação prévia", "Demora excessiva na resposta", "Não tratou objeção de valor", "Não fez chamada para ação/fechamento"). Se convertida ou em andamento saudável, use null.
-4. "acao_resgate_sugerida": Se status for "perdida" ou "em_risco", forneça uma sugestão prática e direta de mensagem que o vendedor ou gestor pode mandar agora para reativar o lead. Se convertida, parabenize ou sugira próximo passo de boas-vindas.
+   - "em_andamento": Conversa ativa fluindo normalmente.
+3. "motivo_perda": Se status for "perdida" ou "em_risco", especifique em 1 frase curta e objetiva o motivo principal. Se convertida ou em andamento saudável, use null.
+4. "acao_resgate_sugerida": Sugestão prática e direta de mensagem para o próximo passo.
 5. "tipo_conversao": "agendamento_confirmado" | "venda_concluida" | "em_andamento" | "perdida" | "sem_interesse"
-6. "cliente_decidido_compra_rapida": boolean (se cliente já veio direto querendo fechar/agendar sem precisar de longa investigação).
+6. "cliente_decidido_compra_rapida": boolean.
 7. "justificativa_conversao": Descrição do desfecho e das frases finais.
-8. "fase_conversa": "contato_inicial" | "investigacao" | "negociacao" | "fechamento" | "pos_venda"
+8. "fase_conversa": "contato_inicial" | "investigacao" | "negociacao" | "fechamento" | "pos_venda" | "cobranca"
 9. "objecoes_detectadas": Lista de objeções reais levantadas pelo cliente.
-10. "vendedor_enviou_preco_sem_investigar": boolean.
+10. "vendedor_enviou_preco_sem_investigar": boolean (sempre FALSE se for cobranca_financeiro ou suporte).
 11. "ultima_msg_vendedor_termina_com_pergunta": boolean.
 12. "vendedor_saudou_e_usou_nome": boolean.
 
@@ -255,11 +260,12 @@ Para cada critério do Playbook, avalie com UM dos 4 estados estritos:
 - "CUMPRIDO": O vendedor executou a técnica corretamente OU o objetivo foi alcançado com sucesso.
 - "PARCIAL": Executou de forma incompleta ou com hesitação.
 - "NAO_CUMPRIDO": A oportunidade existiu claramente, mas o vendedor falhou.
-- "N_A": O cenário para essa regra NÃO ocorreu na conversa.
+- "N_A": O cenário para essa regra NÃO ocorreu na conversa (ex: regras de vendas aplicadas a mensagens de cobrança/financeiro/suporte).
 
-REGRAS DE OURO EM CASO DE CONVERSÃO / COMPRA DIRETA:
+REGRAS DE OURO:
+- Se for COBRANÇA OU SUPORTE: Critérios voltados para venda/matrícula/investigação de metas devem ser marcados como "N_A". Avalie apenas cordialidade/empatia e clareza.
 - Se houve CONVERSÃO (venda ou agendamento confirmado), o critério de "Fechamento" (ou CTA) DEVE SER MARCADO COMO "CUMPRIDO".
-- Se o cliente foi direto ao ponto ou a venda foi rápida, os critérios de "Investigação Profunda" e "Ancoragem de Valor" DEVEM SER MARCADOS COMO "N_A" (não punir o vendedor por ser ágil e fechar logo).
+- Se o cliente foi direto ao ponto ou a venda foi rápida, os critérios de "Investigação Profunda" e "Ancoragem de Valor" DEVEM SER MARCADOS COMO "N_A".
 - Se o cliente NÃO fez objeções → critério "Quebra de Objeções" = "N_A".
 - Critérios "N_A" são EXCLUÍDOS do cálculo (não contam contra o vendedor).
 

@@ -34,6 +34,8 @@ interface AlertRules {
 }
 
 interface AiVerdict {
+  contexto_atendimento?: 'venda_prospeccao' | 'cobranca_financeiro' | 'suporte_duvida' | 'pos_venda'
+  eh_cobranca_ou_suporte?: boolean
   houve_investigacao_previa: boolean
   vendedor_enviou_precos: boolean
   vendedor_finalizou_com_pergunta: boolean
@@ -268,16 +270,25 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     if (rules.alert_on_unanswered_lead !== false) {
       finalInfracao = 'lead_sem_resposta'
     }
-  } else if (processCandidate) {
-    // Panfletagem de Preço: Regra de processo imediata.
-    // Preço enviado + (sem investigação prévia OU sem finalizar com pergunta de agendamento/visita)
-    const enviouPrecos = blockHasPriceRegex || verdict.vendedor_enviou_precos === true
-    const finalizouComPergunta = lastAgentEndsWithQuestion && verdict.vendedor_finalizou_com_pergunta === true
-    const semDiagnostico = verdict.houve_investigacao_previa === false
-    const infracaoProcesso = enviouPrecos && (semDiagnostico || !finalizouComPergunta)
-    const objectiveOnly = !lastAgentEndsWithQuestion // falta de pontuação/pergunta é fato objetivo
-    if (infracaoProcesso && (objectiveOnly || confidenceOk)) {
-      finalInfracao = 'panfletagem'
+    // Se a IA detectou que é cobrança/suporte/pós-venda ou não é contexto de venda, suprime panfletagem
+    const ehCobrancaOuSuporte = verdict.eh_cobranca_ou_suporte === true || 
+      verdict.contexto_atendimento === 'cobranca_financeiro' || 
+      verdict.contexto_atendimento === 'suporte_duvida' || 
+      verdict.contexto_atendimento === 'pos_venda'
+
+    if (ehCobrancaOuSuporte) {
+      console.log(`${tag} Mensagem contextualizada como cobrança/suporte/pós-venda (${verdict.contexto_atendimento}). Panfletagem e alertas de venda desconsiderados.`)
+    } else {
+      // Panfletagem de Preço: Regra de processo imediata para prospecção/venda.
+      // Preço enviado + (sem investigação prévia OU sem finalizar com pergunta de agendamento/visita)
+      const enviouPrecos = blockHasPriceRegex || verdict.vendedor_enviou_precos === true
+      const finalizouComPergunta = lastAgentEndsWithQuestion && verdict.vendedor_finalizou_com_pergunta === true
+      const semDiagnostico = verdict.houve_investigacao_previa === false
+      const infracaoProcesso = enviouPrecos && (semDiagnostico || !finalizouComPergunta)
+      const objectiveOnly = !lastAgentEndsWithQuestion // falta de pontuação/pergunta é fato objetivo
+      if (infracaoProcesso && (objectiveOnly || confidenceOk) && verdict.disparar_alerta !== false) {
+        finalInfracao = 'panfletagem'
+      }
     }
   }
 
@@ -471,37 +482,55 @@ async function askAi(apiKey: string, ctx: {
   }).join('\n')
 
   const system = `Você é um auditor comercial sênior e mentor de vendas de alta performance. Avalie o histórico recente e responda ESTRITAMENTE com um objeto JSON válido.
+ 
+- CLASSIFICAÇÃO CRÍTICA DO CONTEXTO DO ATENDIMENTO:
+Antes de avaliar qualquer regra comercial, identifique a natureza da conversa:
+1. "venda_prospeccao": O lead está buscando informações sobre planos, matrículas, cursos ou serviços para comprar/contratar.
+2. "cobranca_financeiro": O atendente está tratando de pagamentos, cobrança de mensalidade/parcela atrasada, lembrete de vencimento, envio de boleto/chave PIX ou acerto financeiro de cliente já ativo.
+3. "suporte_duvida": O cliente já é aluno/cliente e está tirando dúvidas de uso, horários, acesso ao sistema, agendamento de treino, etc.
+4. "pos_venda": Atendimento de relacionamento e acompanhamento de cliente existente.
 
-REGRAS ATIVAS NO PLAYBOOK:
+⚠️ REGRA DE OURO PARA COBRANÇA, FINANCEIRO E SUPORTE:
+Se o atendimento for classificado como "cobranca_financeiro", "suporte_duvida" ou "pos_venda" (ou se a mensagem do vendedor for cobrança de parcela/mensalidade/acerto de valores devidos):
+- Enviar valores monetários, parcelas ou taxas NÃO É PANFLETAGEM. É a obrigação do atendente/financeiro!
+- NUNCA classifique como "panfletagem" nem dispare alertas de falta de investigação/agendamento de visita para mensagens de cobrança.
+- Defina "infracao_detectada": "nenhuma", "disparar_alerta": false, "eh_cobranca_ou_suporte": true.
+
+REGRAS ATIVAS NO PLAYBOOK (APLICÁVEIS APENAS PARA "venda_prospeccao"):
 ${activeRules}
 
-CHECKLIST BINÁRIO OBRIGATÓRIO DE ENVIO DE PREÇO (GATILHO DE PROCESSO IMEDIATO):
+CHECKLIST BINÁRIO OBRIGATÓRIO DE ENVIO DE PREÇO (GATILHO DE PROCESSO IMEDIATO PARA VENDAS):
 1. O vendedor só pode enviar valores após identificar a necessidade/dor/objetivo do aluno no histórico.
 2. Toda mensagem contendo preço/valores DEVE obrigatoriamente terminar com uma pergunta de convite (visita à academia, agendamento de aula experimental ou matrícula).
-Se o vendedor violar o item 1 ou 2, classifique IMEDIATAMENTE como "panfletagem", mesmo sem objeção do cliente e sem a conversa ter esfriado.
+Se o vendedor violar o item 1 ou 2 em um contexto de VENDA, classifique como "panfletagem", mesmo sem objeção do cliente e sem a conversa ter esfriado.
 
 GATILHO DE OBJEÇÃO (REATIVO):
-Se o cliente apresentou resistência explícita ("achei caro", "concorrente é mais barato", "sem tempo", "vou ver depois") e o vendedor foi frio, passivo ou não respondeu, classifique como "objecao_ignorada".
+Se o cliente em negociação apresentou resistência explícita ("achei caro", "concorrente é mais barato", "sem tempo", "vou ver depois") e o vendedor foi frio, passivo ou não respondeu, classifique como "objecao_ignorada".
 
 GATILHO DE LEAD SEM RESPOSTA / PARADO:
 Se a última mensagem foi do cliente (seja primeiro contato ou dúvida) e o vendedor ainda não respondeu, classifique como "lead_sem_resposta".
 
 AVALIE RIGOROSAMENTE CADA CAMPO:
-1. "houve_investigacao_previa": boolean - true se o objetivo ou necessidade do cliente já havia sido identificado antes do vendedor mandar valores.
-2. "vendedor_enviou_precos": boolean - true se o vendedor informou preços, valores numéricos de planos ou tabela de pagamento nas mensagens com ">>".
-3. "vendedor_finalizou_com_pergunta": boolean - true se a última mensagem do vendedor termina com pergunta de avanço comercial (agendar visita, aula experimental, matrícula). Perguntas vazias como "tudo bem?", "qualquer dúvida avisa" = false.
-4. "infracao_detectada": "panfletagem" | "objecao_ignorada" | "desistencia_passiva" | "lead_sem_resposta" | "nenhuma".
-   Prioridade: objecao_ignorada / desistencia_passiva > panfletagem > lead_sem_resposta.
-5. "disparar_alerta": boolean - true se houver infração comprovada de acordo com as regras ativas.
-6. "confianca": number de 0 a 100 indicando sua certeza. Mantenha >= 85 se a regra objetiva for cumprida.
-7. "motivo_resumido": string - Frase concisa para o gestor descrevendo a falha exata (ex: "Vendedor passou valores do plano anual sem investigar o objetivo do aluno").
-8. "trecho_cliente": string - Fala exata do cliente com a objeção (ou "" se for panfletagem).
-9. "dica_treinador": string - Frase construtiva e amigável para o vendedor explicando o que melhorar de forma pedagógica (sem usar palavras punitivas como "infração", "falha" ou "penalidade").
-10. "por_que_ajustar": string - Breve explicação do impacto comercial (ex: "Saber o foco do aluno permite demonstrar o real valor antes de falar de preço, elevando as conversões").
-11. "o_que_mandar_agora": string - Sugestão pronta de mensagem (copia e cola) extremamente persuasiva, natural e simpática para o vendedor mandar AGORA ao cliente e retomar o diálogo.
+1. "contexto_atendimento": "venda_prospeccao" | "cobranca_financeiro" | "suporte_duvida" | "pos_venda".
+2. "eh_cobranca_ou_suporte": boolean - true se for cobrança, financeiro, suporte técnico ou dúvidas de aluno já ativo.
+3. "houve_investigacao_previa": boolean - true se o objetivo ou necessidade do cliente já havia sido identificado antes do vendedor mandar valores.
+4. "vendedor_enviou_precos": boolean - true se o vendedor informou preços, valores numéricos de novos planos nas mensagens com ">>".
+5. "vendedor_finalizou_com_pergunta": boolean - true se a última mensagem do vendedor termina com pergunta de avanço comercial (agendar visita, aula experimental, matrícula). Perguntas vazias como "tudo bem?", "qualquer dúvida avisa" = false.
+6. "infracao_detectada": "panfletagem" | "objecao_ignorada" | "desistencia_passiva" | "lead_sem_resposta" | "nenhuma".
+   Prioridade: Se eh_cobranca_ou_suporte for true -> "nenhuma".
+   Caso contrário: objecao_ignorada / desistencia_passiva > panfletagem > lead_sem_resposta.
+7. "disparar_alerta": boolean - true se houver infração comprovada de acordo com as regras ativas. NUNCA true se for cobrança/suporte.
+8. "confianca": number de 0 a 100 indicando sua certeza. Mantenha >= 85 se a regra objetiva for cumprida.
+9. "motivo_resumido": string - Frase concisa para o gestor descrevendo a falha exata (ex: "Vendedor passou valores do plano anual sem investigar o objetivo do aluno").
+10. "trecho_cliente": string - Fala exata do cliente com a objeção (ou "" se for panfletagem).
+11. "dica_treinador": string - Frase construtiva e amigável para o vendedor explicando o que melhorar de forma pedagógica (sem usar palavras punitivas como "infração", "falha" ou "penalidade").
+12. "por_que_ajustar": string - Breve explicação do impacto comercial.
+13. "o_que_mandar_agora": string - Sugestão pronta de mensagem (copia e cola) extremamente persuasiva, natural e simpática para o vendedor mandar AGORA ao cliente e retomar o diálogo.
 
 FORMATO ESTRITO DO JSON:
 {
+  "contexto_atendimento": "venda_prospeccao",
+  "eh_cobranca_ou_suporte": false,
   "houve_investigacao_previa": false,
   "vendedor_enviou_precos": false,
   "vendedor_finalizou_com_pergunta": false,
