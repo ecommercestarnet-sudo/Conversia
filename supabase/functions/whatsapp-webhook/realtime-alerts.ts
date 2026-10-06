@@ -202,20 +202,20 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
   }
 
   const cleanClient = String(conv.client_phone || '').replace(/\D/g, '')
-  const normalizeBR = (num: string) => {
-    // Normaliza telefone brasileiro tirando código do país 55 e nono dígito para comparação flexível
-    let n = num.replace(/^55/, '')
-    if (n.length === 11 && n[2] === '9') {
-      n = n.slice(0, 2) + n.slice(3) // 85991038188 -> 8591038188
-    }
-    return n
+
+  // Extrai os últimos 8 dígitos (número base sem DDD e sem 9º dígito móvel)
+  const getLast8 = (num: string) => {
+    const digits = num.replace(/\D/g, '')
+    return digits.length >= 8 ? digits.slice(-8) : digits
   }
 
-  const clientNormalized = normalizeBR(cleanClient)
+  const clientLast8 = getLast8(cleanClient)
   const isInternalParty = Array.from(internalNumbers).some(internal => {
     if (!internal) return false
-    if (cleanClient === internal || cleanClient.endsWith(internal) || internal.endsWith(cleanClient)) return true
-    return normalizeBR(internal) === clientNormalized
+    const internalClean = internal.replace(/\D/g, '')
+    if (cleanClient === internalClean) return true
+    // Se ambos tiverem pelo menos 8 dígitos, compara os últimos 8 dígitos exatos
+    return clientLast8.length === 8 && getLast8(internalClean) === clientLast8
   })
 
   if (isInternalParty) {
