@@ -416,11 +416,17 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
         `❌ Objeção abandonada ou tratada com passividade sem contorno de valor`
 
   // =========================================================================
-  // 1. Definição estrita das duas variáveis de texto distintas:
+  // 1. Mensagem Unificada de Alerta e Resgate (Gestor + Vendedor)
   // =========================================================================
+  const pontoDeAtencao = isProcess
+    ? 'Envio de valor antes de identificar o objetivo do aluno ou sem pergunta de agendamento.'
+    : (verdict.trecho_cliente ? `Objeção apresentada pelo cliente: "${verdict.trecho_cliente}".` : 'Objeção do cliente não contornada.')
 
-  // A) Mensagem para o GESTOR (supervisor_phone)
-  const mensagemGestor =
+  const dicaConducao = verdict.dica_treinador || (isProcess
+    ? 'Descubra a dor/meta do aluno antes de passar valores e finalize com um convite para visita ou aula experimental.'
+    : 'Acolha a preocupação, gere valor sobre os resultados e ofereça uma alternativa prática de dia/horário.')
+
+  const mensagemUnificada =
     `🚨 *ConversIA • ${isProcess ? 'Falha de Processo Comercial' : finalInfracao === 'lead_sem_resposta' ? 'Lead Parado sem Resposta' : 'Alerta de Venda em Risco'}*\n\n` +
     `👤 *Lead:* ${leadPhone}\n` +
     `🏋️ *Atendente:* ${sellerName}\n` +
@@ -428,70 +434,25 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     `❌ *Situação:* ${falhaNome}\n` +
     `📝 *Resumo:* ${resumo}\n\n` +
     `📋 *Diagnóstico:*\n${checklist}\n\n` +
-    (sugestao ? `🎯 *Sugestão de Resgate/Atendimento:*\n"${sugestao}"\n\n` : '') +
+    `💡 *Dica de Condução:*\n${dicaConducao}\n\n` +
+    (sugestao ? `🎯 *Copie e envie agora para o cliente:*\n"${sugestao}"\n\n` : '') +
     (waDirectLink ? `📲 *Falar com o cliente agora:*\n${waDirectLink}\n\n` : '') +
     `👉 *Painel:* ${linkPainel}`
 
-  // B) Mensagem para o VENDEDOR (seller_phone) - Tom pedagógico e encorajador de apoio
-  const pontoDeAtencao = isProcess
-    ? 'Envio de valor antes de identificar o objetivo do aluno ou sem pergunta de agendamento.'
-    : (verdict.trecho_cliente ? `Objeção apresentada pelo cliente: "${verdict.trecho_cliente}".` : 'Objeção do cliente não contornada.')
-
-  const dicaConducao = verdict.dica_treinador || (isProcess
-    ? 'Sempre descubra o objetivo antes do preço e encerre a mensagem com uma pergunta para manter o controle da conversa.'
-    : 'Acolha a preocupação do cliente, gere valor sobre a experiência e convide para uma visita ou aula experimental.')
-
-  const mensagemVendedor =
-    `⚡ *ConversIA • Apoio ao Atendimento*\n\n` +
-    `👤 *Lead:* ${leadPhone}\n` +
-    `🏋️ *Atendente:* ${sellerName}\n\n` +
-    `⚠️ *Ponto de Atenção:*\n${pontoDeAtencao}\n\n` +
-    `💡 *Dica de Condução:*\n${dicaConducao}\n\n` +
-    `🎯 *Copie e envie agora para o cliente:*\n` +
-    `"${sugestao}"`
-
   // =========================================================================
-  // 2. Envios da Evolution API (/message/sendText):
+  // 2. Disparo Único para o GESTOR (supervisor_phone)
   // =========================================================================
-
-  // A) Disparo para o GESTOR (supervisor_phone) -> mensagemGestor
-  console.log(`${tag} Enviando mensagemGestor para ${cleanSupervisor}...`)
+  console.log(`${tag} Enviando alerta unificado para o gestor em ${cleanSupervisor}...`)
   const supervisorResp = await fetch(`${opts.evolutionUrl.replace(/\/$/, '')}/message/sendText/${org.evolution_instance_name}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', apikey: opts.evolutionKey },
-    body: JSON.stringify({ number: cleanSupervisor, text: mensagemGestor }),
+    body: JSON.stringify({ number: cleanSupervisor, text: mensagemUnificada }),
   })
 
   if (!supervisorResp.ok) {
-    console.error(`${tag} Falha ao enviar mensagemGestor (${supervisorResp.status}):`, await supervisorResp.text())
+    console.error(`${tag} Falha ao enviar alerta unificado (${supervisorResp.status}):`, await supervisorResp.text())
   } else {
-    console.log(`${tag} Mensagem do GESTOR enviada com sucesso para ${cleanSupervisor}.`)
-  }
-
-  // B) Disparo para o VENDEDOR (seller_phone) -> mensagemVendedor
-  if (sellerPhone && !sameNumber(sellerPhone, cleanSupervisor) && !sameNumber(sellerPhone, cleanClient)) {
-    try {
-      console.log(`${tag} Enviando mensagemVendedor para ${sellerPhone}...`)
-      const sellerResp = await fetch(`${opts.evolutionUrl.replace(/\/$/, '')}/message/sendText/${org.evolution_instance_name}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: opts.evolutionKey },
-        body: JSON.stringify({ number: sellerPhone, text: mensagemVendedor }),
-      })
-
-      if (!sellerResp.ok) {
-        console.error(`${tag} Falha ao enviar mensagemVendedor (${sellerResp.status}):`, await sellerResp.text())
-      } else {
-        console.log(`${tag} Mensagem do VENDEDOR enviada com sucesso para ${sellerPhone}.`)
-      }
-    } catch (sellerErr) {
-      console.error(`${tag} Erro de requisição no envio ao vendedor:`, sellerErr)
-    }
-  } else {
-    if (!sellerPhone) {
-      console.log(`${tag} Atendente sem WhatsApp cadastrado. Apenas mensagemGestor foi despachada.`)
-    } else if (sameNumber(sellerPhone, cleanSupervisor)) {
-      console.log(`${tag} WhatsApp do atendente é idêntico ao do gestor (${cleanSupervisor}). O gestor já recebeu a mensagemGestor.`)
-    }
+    console.log(`${tag} Alerta unificado enviado com sucesso para ${cleanSupervisor}.`)
   }
 
   // Atualiza banco de dados com registro do alerta e timestamp para cooldown
