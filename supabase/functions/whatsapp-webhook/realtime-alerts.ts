@@ -182,6 +182,23 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     console.warn(`${tag} Telefone do gestor/supervisor não configurado.`)
     return
   }
+  const cleanSupervisor = supervisorPhone.replace(/\D/g, '')
+
+  // Extrai os últimos 8 dígitos (número base sem DDD e sem 9º dígito móvel)
+  const getLast8 = (num: string) => {
+    const digits = String(num || '').replace(/\D/g, '')
+    return digits.length >= 8 ? digits.slice(-8) : digits
+  }
+
+  const sameNumber = (a: string | null | undefined, b: string | null | undefined) => {
+    if (!a || !b) return false
+    const cleanA = String(a).replace(/\D/g, '')
+    const cleanB = String(b).replace(/\D/g, '')
+    if (cleanA === cleanB) return true
+    const l8A = getLast8(cleanA)
+    const l8B = getLast8(cleanB)
+    return l8A.length === 8 && l8A === l8B
+  }
 
   // Busca todos os números de atendentes/operadores da empresa para evitar loop/eco interno
   const { data: allOps } = await supabase
@@ -190,7 +207,7 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     .eq('company_id', conv.organization_id)
 
   const internalNumbers = new Set<string>()
-  if (supervisorPhone) internalNumbers.add(String(supervisorPhone).replace(/\D/g, ''))
+  if (supervisorPhone) internalNumbers.add(cleanSupervisor)
   if (org.owner_whatsapp) internalNumbers.add(String(org.owner_whatsapp).replace(/\D/g, ''))
   if (rules.default_seller_phone) internalNumbers.add(String(rules.default_seller_phone).replace(/\D/g, ''))
 
@@ -202,12 +219,6 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
   }
 
   const cleanClient = String(conv.client_phone || '').replace(/\D/g, '')
-
-  // Extrai os últimos 8 dígitos (número base sem DDD e sem 9º dígito móvel)
-  const getLast8 = (num: string) => {
-    const digits = num.replace(/\D/g, '')
-    return digits.length >= 8 ? digits.slice(-8) : digits
-  }
 
   const clientLast8 = getLast8(cleanClient)
   const isInternalParty = Array.from(internalNumbers).some(internal => {
