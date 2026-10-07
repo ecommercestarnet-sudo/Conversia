@@ -239,15 +239,12 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
   const lastSender: 'vendedor' | 'cliente' = isAgent(last) ? 'vendedor' : 'cliente'
   const minutesSinceLast = (Date.now() - new Date(last.created_at).getTime()) / 60000
 
-  // Se o vendedor nunca falou e o cliente enviou mensagem
-  if (!sellerSpoke) {
-    // Só avalia se já passou o tempo de tolerância (seja em sweep ou após espera)
-    if (lastSender === 'cliente' && minutesSinceLast >= (rules.wait_minutes_before_alert ?? 5)) {
-      // Candidato a lead sem resposta
-    } else {
-      console.log(`${tag} Vendedor ainda não falou e cliente mandou msg há apenas ${minutesSinceLast.toFixed(1)} min. Aguardando.`)
-      return
-    }
+  // Se a última mensagem for do cliente, NUNCA dispara alerta no mesmo instante da mensagem.
+  // O vendedor precisa de tempo para responder (wait_minutes_before_alert).
+  const waitMinutes = rules.wait_minutes_before_alert ?? 5
+  if (lastSender === 'cliente' && minutesSinceLast < waitMinutes) {
+    console.log(`${tag} Cliente enviou mensagem há apenas ${minutesSinceLast.toFixed(1)} min (< ${waitMinutes} min). Aguardando resposta do vendedor.`)
+    return
   }
 
   // Bloco atual do vendedor = mensagens do vendedor após a última mensagem do cliente
@@ -263,13 +260,13 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
   let objectionCandidate = false
   if (objectionRulesOn) {
     if (lastSender === 'vendedor') objectionCandidate = true // vendedor respondeu: avaliar a qualidade da resposta
-    else if (opts.mode === 'sweep' && minutesSinceLast >= rules.wait_minutes_before_alert) objectionCandidate = true // vendedor não respondeu
+    else if (opts.mode === 'sweep' && minutesSinceLast >= waitMinutes) objectionCandidate = true // vendedor não respondeu
   }
 
-  // Candidato a Lead Sem Resposta (seja 1ª mensagem ou no meio da conversa)
+  // Candidato a Lead Sem Resposta (apenas se o tempo de tolerância já tiver passado)
   const unansweredCandidate = rules.alert_on_unanswered_lead !== false &&
     lastSender === 'cliente' &&
-    minutesSinceLast >= (rules.wait_minutes_before_alert ?? 5)
+    minutesSinceLast >= waitMinutes
 
   if (!processCandidate && !objectionCandidate && !unansweredCandidate) {
     console.log(`${tag} Sem candidato a alerta (lastSender=${lastSender}, preço=${blockHasPriceRegex}, unanswered=${unansweredCandidate}, mode=${opts.mode}).`)
