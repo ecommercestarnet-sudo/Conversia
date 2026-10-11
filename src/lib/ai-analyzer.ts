@@ -35,10 +35,10 @@ if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
 }
 
 if (!EVOLUTION_API_URL) {
-  EVOLUTION_API_URL = 'https://evolution-evolution-api.qo61uu.easypanel.host';
+  EVOLUTION_API_URL = 'https://evoltion-evolution-api.6rjjw2.easypanel.host';
 }
 if (!EVOLUTION_API_KEY) {
-  EVOLUTION_API_KEY = '2C916011-DD14-4A20-AE80-DB4AC1C91FFA';
+  EVOLUTION_API_KEY = '429683C4C977415CAAFCCE10F7D57E11';
 }
 
 // ─── Debouncing constants ───

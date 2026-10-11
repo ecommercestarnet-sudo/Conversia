@@ -27,11 +27,11 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!apiUrl || apiUrl.includes('216.238.122.167')) {
-      apiUrl = 'https://evolution-evolution-api.qo61uu.easypanel.host'
+    if (!apiUrl || apiUrl.includes('216.238.122.167') || apiUrl.includes('qo61uu')) {
+      apiUrl = 'https://evoltion-evolution-api.6rjjw2.easypanel.host'
     }
-    if (!apiKey || apiKey === '429683C4C977415CAAFCCE10F7D57E11') {
-      apiKey = '2C916011-DD14-4A20-AE80-DB4AC1C91FFA'
+    if (!apiKey || apiKey === '2C916011-DD14-4A20-AE80-DB4AC1C91FFA') {
+      apiKey = '429683C4C977415CAAFCCE10F7D57E11'
     }
 
     const supabase = createClient(supabaseUrl || '', supabaseServiceRoleKey || '')
