@@ -566,13 +566,18 @@ export default function DashboardClient({ initialConversations, organization, la
         </div>
       </aside>
 
-      {/* 2. CHATS SIDEBAR (Lista de Conversas Pequena na Lateral no Estilo WhatsApp) */}
-      <section className="w-[360px] md:w-[400px] bg-white border-r border-[#e9edef] flex flex-col h-full shrink-0 z-10">
-        {/* Top Header of Chats */}
+      {/* 2. CHATS SIDEBAR (Lista de Conversas Lateral no Estilo WhatsApp) */}
+      <section className="w-[420px] xl:w-[460px] bg-white border-r border-[#e9edef] flex flex-col h-full shrink-0 z-10">
+        {/* Top Header of Chats: Substituído texto "Conversas" pela Logo do Sistema */}
         <div className="h-[60px] bg-[#f0f2f5] px-4 flex items-center justify-between shrink-0 border-b border-[#e9edef]">
-          <h1 className="text-xl font-bold text-[#111b21] tracking-tight">
-            Conversas
-          </h1>
+          <div className="flex items-center">
+            <img 
+              src="/Logo.png" 
+              alt="SupervisIA" 
+              className="h-8 md:h-9 w-auto object-contain cursor-pointer" 
+              onClick={() => router.push(`/${tenantSlug}/dashboard`)}
+            />
+          </div>
 
           <div className="flex items-center gap-1 text-[#54656f]">
             <button
@@ -593,16 +598,16 @@ export default function DashboardClient({ initialConversations, organization, la
         </div>
 
         {/* Search Bar & Filter Pills */}
-        <div className="p-2.5 bg-white border-b border-[#f0f2f5] shrink-0 space-y-2">
-          {/* WhatsApp Search Input */}
+        <div className="p-3 bg-white border-b border-[#f0f2f5] shrink-0 space-y-2.5">
+          {/* WhatsApp Search Input (Permite buscar rápido por telefone ou mensagens) */}
           <div className="relative flex items-center bg-[#f0f2f5] rounded-lg px-3 py-1.5 focus-within:bg-white focus-within:ring-1 focus-within:ring-[#00a884] transition-all">
-            <Search className="w-4 h-4 text-[#54656f] shrink-0 mr-3" />
+            <Search className="w-4 h-4 text-[#54656f] shrink-0 mr-2.5" />
             <input
               type="text"
-              placeholder="Pesquisar ou começar uma nova conversa"
+              placeholder="Pesquisar por número ou cliente..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-transparent text-sm text-[#111b21] placeholder-[#54656f] focus:outline-none"
+              className="w-full bg-transparent text-xs md:text-sm text-[#111b21] placeholder-[#54656f] focus:outline-none"
             />
             {searchTerm && (
               <button
@@ -614,11 +619,11 @@ export default function DashboardClient({ initialConversations, organization, la
             )}
           </div>
 
-          {/* Quick Filter Pills (Tudo, Em Risco, Vendas Perdidas, Ganhos) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 text-xs font-medium">
+          {/* Quick Filter Pills (Acomodados confortavelmente sem barra de rolagem) */}
+          <div className="flex items-center justify-between gap-1 text-[11px] font-medium">
             <button
               onClick={() => setStatusFilter('all')}
-              className={`px-3 py-1 rounded-full transition-colors whitespace-nowrap cursor-pointer ${
+              className={`flex-1 py-1 px-1.5 rounded-lg text-center transition-colors cursor-pointer truncate ${
                 statusFilter === 'all'
                   ? 'bg-[#d9fdd3] text-[#008069] font-bold'
                   : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
@@ -628,29 +633,29 @@ export default function DashboardClient({ initialConversations, organization, la
             </button>
             <button
               onClick={() => setStatusFilter(statusFilter === 'em_risco' ? 'all' : 'em_risco')}
-              className={`px-3 py-1 rounded-full transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1 ${
+              className={`flex-1 py-1 px-1.5 rounded-lg text-center transition-colors cursor-pointer truncate flex items-center justify-center gap-0.5 ${
                 statusFilter === 'em_risco'
                   ? 'bg-amber-100 text-amber-800 font-bold border border-amber-300'
                   : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
               }`}
             >
-              <span>🚨 Em Risco</span>
+              <span>🚨 Risco</span>
               <span className="text-[10px] opacity-80">({metrics.emRiscoCount})</span>
             </button>
             <button
               onClick={() => setStatusFilter(statusFilter === 'perdida' ? 'all' : 'perdida')}
-              className={`px-3 py-1 rounded-full transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1 ${
+              className={`flex-1 py-1 px-1.5 rounded-lg text-center transition-colors cursor-pointer truncate flex items-center justify-center gap-0.5 ${
                 statusFilter === 'perdida'
                   ? 'bg-rose-100 text-rose-800 font-bold border border-rose-300'
                   : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
               }`}
             >
-              <span>❌ Perdidas</span>
+              <span>❌ Perda</span>
               <span className="text-[10px] opacity-80">({metrics.perdidasCount})</span>
             </button>
             <button
               onClick={() => setStatusFilter(statusFilter === 'convertida' ? 'all' : 'convertida')}
-              className={`px-3 py-1 rounded-full transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1 ${
+              className={`flex-1 py-1 px-1.5 rounded-lg text-center transition-colors cursor-pointer truncate flex items-center justify-center gap-0.5 ${
                 statusFilter === 'convertida'
                   ? 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-300'
                   : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
@@ -662,8 +667,8 @@ export default function DashboardClient({ initialConversations, organization, la
           </div>
 
           {/* Atendente Dropdown Filter */}
-          <div className="flex items-center gap-2 pt-1">
-            <span className="text-[10px] font-semibold text-[#667781] uppercase tracking-wider">Atendente:</span>
+          <div className="flex items-center gap-2 pt-0.5">
+            <span className="text-[10px] font-semibold text-[#667781] uppercase tracking-wider shrink-0">Atendente:</span>
             <select
               value={operatorFilter}
               onChange={(e) => setOperatorFilter(e.target.value)}
