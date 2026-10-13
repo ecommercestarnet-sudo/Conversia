@@ -434,14 +434,9 @@ export default function DashboardClient({ initialConversations, organization, la
       )}
 
       {/* 1. ULTRA-SLIM WHATSAPP ICON NAVIGATION RAIL (Lateral Esquerda com Tooltips) */}
-      <aside className="w-[60px] bg-[#f0f2f5] border-r border-[#d1d7db] flex flex-col items-center justify-between py-3 shrink-0 z-20">
+      <aside className="w-[60px] bg-[#f0f2f5] border-r border-[#d1d7db] flex flex-col items-center justify-between py-4 shrink-0 z-20">
         {/* Top Icons */}
-        <div className="flex flex-col items-center gap-2 w-full">
-          {/* Logo / Brand Icon */}
-          <div className="w-10 h-10 rounded-full flex items-center justify-center p-1 mb-2 hover:opacity-90 transition-opacity" title="SupervisIA">
-            <img src="/Logo.png" alt="SupervisIA" className="w-full h-full object-contain" />
-          </div>
-
+        <div className="flex flex-col items-center gap-2.5 w-full">
           {/* Conversas (Active Tab) */}
           <div className="relative group">
             <button
@@ -568,13 +563,13 @@ export default function DashboardClient({ initialConversations, organization, la
 
       {/* 2. CHATS SIDEBAR (Lista de Conversas Lateral no Estilo WhatsApp) */}
       <section className="w-[420px] xl:w-[460px] bg-white border-r border-[#e9edef] flex flex-col h-full shrink-0 z-10">
-        {/* Top Header of Chats: Substituído texto "Conversas" pela Logo do Sistema */}
+        {/* Top Header of Chats: Substituído texto "Conversas" pela Logo do Sistema (Aumentada em ~25%) */}
         <div className="h-[60px] bg-[#f0f2f5] px-4 flex items-center justify-between shrink-0 border-b border-[#e9edef]">
           <div className="flex items-center">
             <img 
               src="/Logo.png" 
               alt="SupervisIA" 
-              className="h-8 md:h-9 w-auto object-contain cursor-pointer" 
+              className="h-10 md:h-11 w-auto object-contain cursor-pointer hover:opacity-95 transition-opacity" 
               onClick={() => router.push(`/${tenantSlug}/dashboard`)}
             />
           </div>
@@ -666,9 +661,9 @@ export default function DashboardClient({ initialConversations, organization, la
             </button>
           </div>
 
-          {/* Atendente Dropdown Filter */}
+          {/* Filtro por Atendente na Lista de Conversas */}
           <div className="flex items-center gap-2 pt-0.5">
-            <span className="text-[10px] font-semibold text-[#667781] uppercase tracking-wider shrink-0">Atendente:</span>
+            <span className="text-[10px] font-semibold text-[#667781] uppercase tracking-wider shrink-0">Filtrar Atendente:</span>
             <select
               value={operatorFilter}
               onChange={(e) => setOperatorFilter(e.target.value)}
