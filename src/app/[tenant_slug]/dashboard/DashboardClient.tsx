@@ -22,7 +22,15 @@ import {
   LogOut,
   ExternalLink,
   Users,
-  Settings
+  Settings,
+  Filter,
+  Check,
+  CheckCheck,
+  MoreVertical,
+  ChevronRight,
+  User,
+  ShieldCheck,
+  LayoutDashboard
 } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { logout } from '@/app/auth-actions';
@@ -103,6 +111,7 @@ export default function DashboardClient({ initialConversations, organization, la
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isTeamRankingOpen, setIsTeamRankingOpen] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(false);
 
   const handleSignOut = async () => {
     await logout();
@@ -405,516 +414,591 @@ export default function DashboardClient({ initialConversations, organization, la
   };
 
   return (
-    <div className="relative min-h-screen bg-slate-50 text-slate-800 font-sans antialiased">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#eae6df] text-slate-800 font-sans antialiased select-none">
+      {/* Offline Alert Top Bar */}
       {lastStatusLog?.status === 'close' && (
-        <div className="bg-red-650 bg-red-600 text-white px-6 py-3 relative z-20 shadow-md">
-          <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-3">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-white shrink-0 animate-pulse" />
-              <span className="text-sm font-medium">
-                <strong>Atenção:</strong> A integração com o WhatsApp está offline desde{' '}
-                <span className="font-bold underline">{formatDate(lastStatusLog.created_at)}</span>. 
-                As mensagens enviadas ou recebidas durante este período não estão sendo monitoradas.
-              </span>
-            </div>
-            <button
-              onClick={() => router.push(`/${tenantSlug}/dashboard/whatsapp`)}
-              className="px-3 py-1.5 bg-white text-red-650 text-red-600 hover:bg-red-50 text-xs font-bold rounded-lg transition-all cursor-pointer shadow-sm shrink-0"
-            >
-              Reconectar WhatsApp
-            </button>
+        <div className="fixed top-0 left-0 right-0 bg-red-600 text-white px-4 py-2 text-xs font-semibold flex items-center justify-between z-50 shadow-md">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-white animate-pulse" />
+            <span>
+              WhatsApp Offline desde {formatDate(lastStatusLog.created_at)}. Reconecte para auditar mensagens.
+            </span>
           </div>
+          <button
+            onClick={() => router.push(`/${tenantSlug}/dashboard/whatsapp`)}
+            className="px-2.5 py-1 bg-white text-red-600 rounded text-[11px] font-bold hover:bg-red-50 cursor-pointer"
+          >
+            Reconectar
+          </button>
         </div>
       )}
-      {/* Header */}
-      <header className="border-b border-slate-200 bg-white/80 backdrop-blur-md sticky top-0 z-10 px-6 py-4 shadow-sm">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <div className="flex items-center">
-              <img src="/Logo.png" alt="SupervisIA Logo" className="h-10 md:h-12 w-auto object-contain" />
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Monitoramento e Inteligência Comercial para Times de Vendas
-            </p>
+
+      {/* 1. ULTRA-SLIM WHATSAPP ICON NAVIGATION RAIL (Lateral Esquerda com Tooltips) */}
+      <aside className="w-[60px] bg-[#f0f2f5] border-r border-[#d1d7db] flex flex-col items-center justify-between py-3 shrink-0 z-20">
+        {/* Top Icons */}
+        <div className="flex flex-col items-center gap-2 w-full">
+          {/* Logo / Brand Icon */}
+          <div className="w-10 h-10 rounded-full flex items-center justify-center p-1 mb-2 hover:opacity-90 transition-opacity" title="SupervisIA">
+            <img src="/Logo.png" alt="SupervisIA" className="w-full h-full object-contain" />
           </div>
 
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Buscar cliente (telefone)..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors shadow-sm"
-              />
-            </div>
-            
+          {/* Conversas (Active Tab) */}
+          <div className="relative group">
+            <button
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-[#00a884] bg-[#d9fdd3]/70 transition-all cursor-pointer shadow-xs"
+              aria-label="Conversas"
+            >
+              <MessageSquare className="w-5 h-5 fill-current" />
+            </button>
+            <span className="pointer-events-none absolute left-[68px] top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs font-medium px-2.5 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg whitespace-nowrap z-50">
+              Conversas & Atendimentos
+            </span>
+          </div>
+
+          {/* Indicadores & KPIs Comerciais (Toggle) */}
+          <div className="relative group">
+            <button
+              onClick={() => setShowMetrics(!showMetrics)}
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
+                showMetrics ? 'text-[#00a884] bg-[#d9fdd3]' : 'text-[#54656f] hover:bg-[#e9edef]'
+              }`}
+              aria-label="Painel de Métricas Comerciais"
+            >
+              <BarChart3 className="w-5 h-5" />
+            </button>
+            <span className="pointer-events-none absolute left-[68px] top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs font-medium px-2.5 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg whitespace-nowrap z-50">
+              {showMetrics ? 'Ocultar Indicadores Comerciais' : 'Ver Indicadores Comerciais'}
+            </span>
+          </div>
+
+          {/* Desempenho do Time */}
+          <div className="relative group">
             <button
               onClick={() => setIsTeamRankingOpen(true)}
-              className="px-3.5 py-2 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:text-slate-900 transition-all flex items-center gap-2 cursor-pointer shrink-0 shadow-sm"
-              title="Ver Desempenho e Ranking do Time"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-[#54656f] hover:bg-[#e9edef] transition-all cursor-pointer"
+              aria-label="Desempenho e Ranking do Time"
             >
-              <Users className="w-4 h-4 text-emerald-600" />
-              <span>Desempenho do Time</span>
+              <Users className="w-5 h-5" />
             </button>
+            <span className="pointer-events-none absolute left-[68px] top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs font-medium px-2.5 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg whitespace-nowrap z-50">
+              Desempenho e Ranking do Time
+            </span>
+          </div>
 
+          {/* Playbook de IA */}
+          <div className="relative group">
             <button
               onClick={() => router.push(`/${tenantSlug}/dashboard/playbook`)}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-lg text-sm font-medium text-white transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-500/10 shrink-0"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-[#54656f] hover:bg-[#e9edef] transition-all cursor-pointer"
+              aria-label="Playbook de IA"
             >
-              <BookOpen className="w-4 h-4" />
-              <span>Playbook de IA</span>
+              <BookOpen className="w-5 h-5" />
             </button>
+            <span className="pointer-events-none absolute left-[68px] top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs font-medium px-2.5 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg whitespace-nowrap z-50">
+              Playbook de IA
+            </span>
+          </div>
 
-            <button
-              onClick={() => router.push(`/${tenantSlug}/dashboard/settings`)}
-              className="px-4 py-2 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 transition-all flex items-center gap-2 cursor-pointer shrink-0 shadow-sm"
-              title="Configurações Gerais"
-            >
-              <Settings className="w-4 h-4 text-slate-500" />
-              <span>Configurações</span>
-            </button>
-
+          {/* Conexão WhatsApp */}
+          <div className="relative group">
             <button
               onClick={() => router.push(`/${tenantSlug}/dashboard/whatsapp`)}
-              className="px-4 py-2 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 transition-all flex items-center gap-2 cursor-pointer shrink-0 shadow-sm"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-[#54656f] hover:bg-[#e9edef] transition-all cursor-pointer relative"
+              aria-label="Conexão do WhatsApp"
             >
-              <Phone className="w-4 h-4 text-slate-500" />
-              <span>Conexão WhatsApp</span>
+              <Phone className="w-5 h-5" />
               {organization?.whatsapp_status === 'connected' ? (
-                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]" title="Conectado" />
+                <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.9)]" />
               ) : (
-                <span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]" title="Desconectado" />
+                <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.9)]" />
               )}
             </button>
+            <span className="pointer-events-none absolute left-[68px] top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs font-medium px-2.5 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg whitespace-nowrap z-50">
+              Conexão WhatsApp {organization?.whatsapp_status === 'connected' ? '(Conectado)' : '(Desconectado)'}
+            </span>
+          </div>
+        </div>
 
+        {/* Bottom Icons */}
+        <div className="flex flex-col items-center gap-2 w-full pb-1">
+          {/* Atualizar Dados */}
+          <div className="relative group">
             <button
               onClick={handleRefresh}
               disabled={isRefreshing}
-              className="p-2 bg-white border border-slate-200 hover:border-slate-300 rounded-lg text-slate-600 hover:text-slate-900 transition-all disabled:opacity-50 flex items-center justify-center shrink-0 cursor-pointer shadow-sm"
-              title="Atualizar dados"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-[#54656f] hover:bg-[#e9edef] transition-all disabled:opacity-50 cursor-pointer"
+              aria-label="Atualizar dados"
             >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-emerald-600' : 'text-slate-500'}`} />
+              <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin text-[#00a884]' : ''}`} />
             </button>
+            <span className="pointer-events-none absolute left-[68px] top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs font-medium px-2.5 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg whitespace-nowrap z-50">
+              Atualizar dados
+            </span>
+          </div>
 
+          {/* Configurações */}
+          <div className="relative group">
+            <button
+              onClick={() => router.push(`/${tenantSlug}/dashboard/settings`)}
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-[#54656f] hover:bg-[#e9edef] transition-all cursor-pointer"
+              aria-label="Configurações Gerais"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+            <span className="pointer-events-none absolute left-[68px] top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs font-medium px-2.5 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg whitespace-nowrap z-50">
+              Configurações Gerais
+            </span>
+          </div>
+
+          {/* Sair */}
+          <div className="relative group">
             <button
               onClick={handleSignOut}
-              className="p-2 bg-white border border-slate-200 hover:border-red-500/30 hover:bg-red-50 text-slate-500 hover:text-red-600 rounded-lg transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-sm"
-              title="Sair do Sistema"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-[#54656f] hover:bg-rose-100 hover:text-rose-600 transition-all cursor-pointer"
+              aria-label="Sair"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-5 h-5" />
+            </button>
+            <span className="pointer-events-none absolute left-[68px] top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs font-medium px-2.5 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg whitespace-nowrap z-50">
+              Sair do Sistema
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      {/* 2. CHATS SIDEBAR (Lista de Conversas Pequena na Lateral no Estilo WhatsApp) */}
+      <section className="w-[360px] md:w-[400px] bg-white border-r border-[#e9edef] flex flex-col h-full shrink-0 z-10">
+        {/* Top Header of Chats */}
+        <div className="h-[60px] bg-[#f0f2f5] px-4 flex items-center justify-between shrink-0 border-b border-[#e9edef]">
+          <h1 className="text-xl font-bold text-[#111b21] tracking-tight">
+            Conversas
+          </h1>
+
+          <div className="flex items-center gap-1 text-[#54656f]">
+            <button
+              onClick={() => setShowMetrics(!showMetrics)}
+              className={`p-2 rounded-full hover:bg-[#e9edef] transition-colors cursor-pointer ${showMetrics ? 'text-[#00a884]' : ''}`}
+              title="Resumo Comercial"
+            >
+              <BarChart3 className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleRefresh}
+              className="p-2 rounded-full hover:bg-[#e9edef] transition-colors cursor-pointer"
+              title="Atualizar"
+            >
+              <RefreshCw className={`w-5 h-5 ${isRefreshing ? 'animate-spin text-[#00a884]' : ''}`} />
             </button>
           </div>
         </div>
-      </header>
 
-      {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        
-        {/* Top Cards (Metrics Grid) - Compact and Aligned */}
-        {/* Top Cards (Commercial Supervision Metrics Grid) */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          
-          {/* Card 1: Oportunidades em Risco */}
-          <div 
-            onClick={() => setStatusFilter(statusFilter === 'em_risco' ? 'all' : 'em_risco')}
-            className={`bg-white border rounded-xl p-4 flex items-center justify-between transition-all duration-300 cursor-pointer shadow-sm ${
-              statusFilter === 'em_risco' ? 'border-amber-500 ring-2 ring-amber-500/20 bg-amber-50/20' : 'border-slate-200 hover:border-amber-300'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-amber-50 text-amber-600 rounded-xl border border-amber-200">
-                <AlertTriangle className="w-5 h-5 animate-pulse" />
-              </div>
-              <div>
-                <div className="text-[10px] text-amber-700 font-bold uppercase tracking-wider flex items-center gap-1">
-                  <span>🚨 Em Risco</span>
-                </div>
-                <div className="text-xl font-black text-slate-900 mt-0.5">
-                  {metrics.emRiscoCount} <span className="text-xs text-slate-400 font-normal">leads</span>
-                </div>
-              </div>
-            </div>
-            <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-              Ação imediata
-            </span>
+        {/* Search Bar & Filter Pills */}
+        <div className="p-2.5 bg-white border-b border-[#f0f2f5] shrink-0 space-y-2">
+          {/* WhatsApp Search Input */}
+          <div className="relative flex items-center bg-[#f0f2f5] rounded-lg px-3 py-1.5 focus-within:bg-white focus-within:ring-1 focus-within:ring-[#00a884] transition-all">
+            <Search className="w-4 h-4 text-[#54656f] shrink-0 mr-3" />
+            <input
+              type="text"
+              placeholder="Pesquisar ou começar uma nova conversa"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-transparent text-sm text-[#111b21] placeholder-[#54656f] focus:outline-none"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="text-xs text-[#54656f] hover:text-[#111b21] font-bold ml-1"
+              >
+                ✕
+              </button>
+            )}
           </div>
 
-          {/* Card 2: Vendas Perdidas */}
-          <div 
-            onClick={() => setStatusFilter(statusFilter === 'perdida' ? 'all' : 'perdida')}
-            className={`bg-white border rounded-xl p-4 flex items-center justify-between transition-all duration-300 cursor-pointer shadow-sm ${
-              statusFilter === 'perdida' ? 'border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/20' : 'border-slate-200 hover:border-rose-300'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl border border-rose-200">
-                <TrendingUp className="w-5 h-5 rotate-180 text-rose-500" />
-              </div>
-              <div>
-                <div className="text-[10px] text-rose-700 font-bold uppercase tracking-wider">
-                  ❌ Vendas Perdidas
-                </div>
-                <div className="text-xl font-black text-slate-900 mt-0.5">
-                  {metrics.perdidasCount} <span className="text-xs text-slate-400 font-normal">atendimentos</span>
-                </div>
-              </div>
-            </div>
-            <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
-              Diagnóstico
-            </span>
+          {/* Quick Filter Pills (Tudo, Em Risco, Vendas Perdidas, Ganhos) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 text-xs font-medium">
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-1 rounded-full transition-colors whitespace-nowrap cursor-pointer ${
+                statusFilter === 'all'
+                  ? 'bg-[#d9fdd3] text-[#008069] font-bold'
+                  : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
+              }`}
+            >
+              Tudo ({initialConversations.length})
+            </button>
+            <button
+              onClick={() => setStatusFilter(statusFilter === 'em_risco' ? 'all' : 'em_risco')}
+              className={`px-3 py-1 rounded-full transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1 ${
+                statusFilter === 'em_risco'
+                  ? 'bg-amber-100 text-amber-800 font-bold border border-amber-300'
+                  : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
+              }`}
+            >
+              <span>🚨 Em Risco</span>
+              <span className="text-[10px] opacity-80">({metrics.emRiscoCount})</span>
+            </button>
+            <button
+              onClick={() => setStatusFilter(statusFilter === 'perdida' ? 'all' : 'perdida')}
+              className={`px-3 py-1 rounded-full transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1 ${
+                statusFilter === 'perdida'
+                  ? 'bg-rose-100 text-rose-800 font-bold border border-rose-300'
+                  : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
+              }`}
+            >
+              <span>❌ Perdidas</span>
+              <span className="text-[10px] opacity-80">({metrics.perdidasCount})</span>
+            </button>
+            <button
+              onClick={() => setStatusFilter(statusFilter === 'convertida' ? 'all' : 'convertida')}
+              className={`px-3 py-1 rounded-full transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1 ${
+                statusFilter === 'convertida'
+                  ? 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-300'
+                  : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
+              }`}
+            >
+              <span>✅ Ganhos</span>
+              <span className="text-[10px] opacity-80">({metrics.convertidasCount})</span>
+            </button>
           </div>
 
-          {/* Card 3: Vendas Fechadas / Convertidas */}
-          <div 
-            onClick={() => setStatusFilter(statusFilter === 'convertida' ? 'all' : 'convertida')}
-            className={`bg-white border rounded-xl p-4 flex items-center justify-between transition-all duration-300 cursor-pointer shadow-sm ${
-              statusFilter === 'convertida' ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/20' : 'border-slate-200 hover:border-emerald-300'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-200">
-                <Target className="w-5 h-5 text-emerald-600" />
-              </div>
-              <div>
-                <div className="text-[10px] text-emerald-700 font-bold uppercase tracking-wider">
-                  ✅ Vendas Fechadas
-                </div>
-                <div className="text-xl font-black text-slate-900 mt-0.5">
-                  {metrics.convertidasCount} <span className="text-xs text-slate-400 font-normal">ganhos</span>
-                </div>
-              </div>
-            </div>
-            <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-              {metrics.analyzedCount > 0 ? `${Math.round((metrics.convertidasCount / metrics.analyzedCount) * 100)}% conv.` : '0% conv.'}
-            </span>
+          {/* Atendente Dropdown Filter */}
+          <div className="flex items-center gap-2 pt-1">
+            <span className="text-[10px] font-semibold text-[#667781] uppercase tracking-wider">Atendente:</span>
+            <select
+              value={operatorFilter}
+              onChange={(e) => setOperatorFilter(e.target.value)}
+              className="flex-1 bg-[#f0f2f5] border-0 rounded-md px-2 py-1 text-xs text-[#111b21] focus:ring-1 focus:ring-[#00a884] focus:outline-none cursor-pointer"
+            >
+              <option value="all">Todos os atendentes</option>
+              <option value="unassigned">Sem atendente atribuído</option>
+              {operators.map((op) => (
+                <option key={op.id} value={op.id}>
+                  {op.name} {op.role ? `(${op.role})` : ''}
+                </option>
+              ))}
+            </select>
           </div>
+        </div>
 
-          {/* Card 4: Motivo Principal de Perda */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center transition-all duration-300 hover:border-slate-300 shadow-sm">
-            <div className="flex items-center gap-3 min-w-0 w-full">
-              <div className="p-2.5 bg-slate-50 text-slate-600 rounded-xl border border-slate-200 shrink-0">
-                <HelpCircle className="w-5 h-5 text-slate-500" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Maior Causa de Perda</div>
-                <div 
-                  className={`text-xs font-bold truncate mt-0.5 ${metrics.perdidasCount === 0 ? 'text-slate-400 font-medium italic' : 'text-slate-800'}`} 
-                  title={metrics.topLossReason}
+        {/* Contacts / Conversations List */}
+        <div className="flex-1 overflow-y-auto divide-y divide-[#f0f2f5]">
+          {filteredConversations.length === 0 ? (
+            <div className="p-8 text-center flex flex-col items-center justify-center text-[#667781] h-64">
+              <MessageSquare className="w-10 h-10 text-slate-300 mb-2" />
+              <p className="text-sm font-medium">Nenhuma conversa encontrada</p>
+              <p className="text-xs text-[#8696a0] mt-1">Tente ajustar seus filtros ou busca.</p>
+            </div>
+          ) : (
+            filteredConversations.map((conv) => {
+              const analysis = getAnalysis(conv);
+              const isSelected = selectedId === conv.id;
+              const latestMsg = conv.messages && conv.messages.length > 0 
+                ? conv.messages[conv.messages.length - 1].content 
+                : 'Sem histórico de mensagens';
+              const assignedOperator = operators.find(op => op.id === conv.operator_id);
+              const { status, motivo } = getCommercialStatus(conv);
+              const badge = getCommercialBadge(status);
+              const waitInfo = getWaitInfo(conv);
+              const timeFormatted = formatDate(conv.created_at).split(' ')[1];
+
+              return (
+                <div
+                  key={conv.id}
+                  onClick={() => setSelectedId(conv.id)}
+                  className={`flex items-start gap-3 px-3 py-3 cursor-pointer transition-colors relative ${
+                    isSelected ? 'bg-[#f0f2f5]' : 'hover:bg-[#f5f6f6] bg-white'
+                  }`}
                 >
+                  {/* Avatar Pequeno e Compacto */}
+                  <div className="relative shrink-0 mt-0.5">
+                    <div className="w-11 h-11 rounded-full bg-[#dfe5e7] flex items-center justify-center text-[#54656f] font-semibold text-sm">
+                      <User className="w-5 h-5 text-[#54656f]" />
+                    </div>
+                    {/* Status Dot */}
+                    <span
+                      className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${badge.dot}`}
+                      title={badge.label}
+                    />
+                  </div>
+
+                  {/* Main Conversation Card Info */}
+                  <div className="flex-1 min-w-0">
+                    {/* Row 1: Phone / Name + Time */}
+                    <div className="flex justify-between items-baseline mb-1">
+                      <h3 className="text-sm font-semibold text-[#111b21] truncate">
+                        {formatPhoneNumber(conv.client_phone)}
+                      </h3>
+                      <span className="text-[11px] text-[#667781] shrink-0 font-medium ml-2">
+                        {timeFormatted}
+                      </span>
+                    </div>
+
+                    {/* Row 2: Last Message Preview */}
+                    <div className="flex items-center gap-1 text-xs text-[#667781] truncate mb-1">
+                      <p className="truncate text-xs text-[#3b4a54]">
+                        {latestMsg}
+                      </p>
+                    </div>
+
+                    {/* Row 3: Commercial Badge + Wait alert */}
+                    <div className="flex items-center flex-wrap gap-1 mt-1">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${badge.bg} ${badge.text} border ${badge.border}`}>
+                        {badge.label}
+                      </span>
+
+                      {waitInfo.text && (
+                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-0.5">
+                          <Clock className="w-2.5 h-2.5 animate-pulse" />
+                          <span>{waitInfo.text}</span>
+                        </span>
+                      )}
+
+                      {analysis && (
+                        <span className="text-[9px] font-bold text-slate-500 ml-auto">
+                          Score: {analysis.overall_score}%
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Assigned operator mini tag */}
+                    {assignedOperator && (
+                      <div className="text-[10px] text-[#8696a0] mt-1 truncate">
+                        Resp: {assignedOperator.name}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
+
+      {/* 3. MAIN STAGE: WHATSAPP CONVERSATION OR EMPTY STATE */}
+      <main className="flex-1 flex flex-col h-full bg-[#efeae2] relative overflow-hidden">
+        {/* Collapsible Commercial Metrics Panel (se ativado pelo ícone de gráficos) */}
+        {showMetrics && (
+          <section className="bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 py-3 shadow-md z-10 animate-fade-in shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <BarChart3 className="w-4 h-4 text-emerald-600" />
+                Painel Rápido de Inteligência Comercial
+              </span>
+              <button
+                onClick={() => setShowMetrics(false)}
+                className="text-xs font-semibold text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                ✕ Fechar
+              </button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div 
+                onClick={() => setStatusFilter(statusFilter === 'em_risco' ? 'all' : 'em_risco')}
+                className="bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 cursor-pointer hover:bg-amber-100/50 transition-colors"
+              >
+                <div className="text-[10px] font-bold text-amber-800 uppercase">🚨 Em Risco</div>
+                <div className="text-lg font-black text-slate-900">{metrics.emRiscoCount} <span className="text-[10px] text-slate-500 font-normal">leads</span></div>
+              </div>
+              <div 
+                onClick={() => setStatusFilter(statusFilter === 'perdida' ? 'all' : 'perdida')}
+                className="bg-rose-50/70 border border-rose-200 rounded-xl p-2.5 cursor-pointer hover:bg-rose-100/50 transition-colors"
+              >
+                <div className="text-[10px] font-bold text-rose-800 uppercase">❌ Vendas Perdidas</div>
+                <div className="text-lg font-black text-slate-900">{metrics.perdidasCount} <span className="text-[10px] text-slate-500 font-normal">leads</span></div>
+              </div>
+              <div 
+                onClick={() => setStatusFilter(statusFilter === 'convertida' ? 'all' : 'convertida')}
+                className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-2.5 cursor-pointer hover:bg-emerald-100/50 transition-colors"
+              >
+                <div className="text-[10px] font-bold text-emerald-800 uppercase">✅ Vendas Fechadas</div>
+                <div className="text-lg font-black text-slate-900">{metrics.convertidasCount} <span className="text-[10px] text-slate-500 font-normal">ganhos</span></div>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5">
+                <div className="text-[10px] font-bold text-slate-500 uppercase">Maior Causa de Perda</div>
+                <div className="text-xs font-bold text-slate-800 truncate mt-1" title={metrics.topLossReason}>
                   {metrics.topLossReason}
                 </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
-        {/* Workspace Columns (2 Columns WhatsApp-Web Style Layout) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-          
-          {/* Left Column: Conversas List */}
-          <div className="lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-4 flex flex-col h-[calc(100vh-230px)] shadow-sm">
-            <div className="flex justify-between items-center mb-3 px-1 shrink-0">
-              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                Atendimentos ({filteredConversations.length})
-              </h2>
-              {statusFilter !== 'all' && (
-                <button
-                  onClick={() => setStatusFilter('all')}
-                  className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 underline"
-                >
-                  Limpar filtro
-                </button>
-              )}
-            </div>
-
-            {/* Commercial Status Quick Filter Tabs */}
-            <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-xl mb-3 shrink-0 text-[10px] font-bold text-center">
-              <button
-                onClick={() => setStatusFilter('all')}
-                className={`py-1.5 rounded-lg transition-all cursor-pointer ${
-                  statusFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Todos ({initialConversations.length})
-              </button>
-              <button
-                onClick={() => setStatusFilter('em_risco')}
-                className={`py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-0.5 ${
-                  statusFilter === 'em_risco' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-500 hover:text-amber-700'
-                }`}
-              >
-                <span>🚨 Risco</span>
-                <span className="text-[9px] opacity-80">({metrics.emRiscoCount})</span>
-              </button>
-              <button
-                onClick={() => setStatusFilter('perdida')}
-                className={`py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-0.5 ${
-                  statusFilter === 'perdida' ? 'bg-white text-rose-700 shadow-xs' : 'text-slate-500 hover:text-rose-700'
-                }`}
-              >
-                <span>❌ Perda</span>
-                <span className="text-[9px] opacity-80">({metrics.perdidasCount})</span>
-              </button>
-              <button
-                onClick={() => setStatusFilter('convertida')}
-                className={`py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-0.5 ${
-                  statusFilter === 'convertida' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-500 hover:text-emerald-700'
-                }`}
-              >
-                <span>✅ Ganhos</span>
-                <span className="text-[9px] opacity-80">({metrics.convertidasCount})</span>
-              </button>
-            </div>
-
-            {/* Operator Filter Dropdown */}
-            <div className="mb-3 shrink-0 px-1">
-              <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                Filtrar por Atendente
-              </label>
-              <select
-                value={operatorFilter}
-                onChange={(e) => setOperatorFilter(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors shadow-sm"
-              >
-                <option value="all">Todos os atendentes</option>
-                <option value="unassigned">Sem atendente atribuído</option>
-                {operators.map((op) => (
-                  <option key={op.id} value={op.id}>
-                    {op.name} {op.role ? `(${op.role})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {filteredConversations.length === 0 ? (
-              <div className="text-center py-12 border border-dashed border-slate-200 rounded-xl bg-slate-50 flex-1 flex flex-col justify-center items-center">
-                <MessageSquare className="w-8 h-8 text-slate-300 mb-2 animate-pulse" />
-                <p className="text-xs text-slate-450">Nenhum atendimento com o filtro selecionado.</p>
+        {selectedConversation ? (
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
+            {/* WhatsApp Chat Header */}
+            <header className="h-[60px] bg-[#f0f2f5] px-4 border-b border-[#d1d7db] flex items-center justify-between shrink-0 z-10 shadow-xs">
+              {/* Client Info (Avatar + Phone + Online/Date) */}
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#dfe5e7] flex items-center justify-center text-[#54656f] shrink-0 font-semibold">
+                  <User className="w-5 h-5 text-[#54656f]" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-[#111b21] leading-tight">
+                    {formatPhoneNumber(selectedConversation.client_phone)}
+                  </h2>
+                  <p className="text-[11px] text-[#667781] leading-tight mt-0.5">
+                    Criado em {formatDate(selectedConversation.created_at)}
+                  </p>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-2 overflow-y-auto flex-1 pr-1 custom-scrollbar">
-                {filteredConversations.map((conv) => {
-                  const analysis = getAnalysis(conv);
-                  const isSelected = selectedId === conv.id;
-                  const latestMsg = conv.messages && conv.messages.length > 0 
-                    ? conv.messages[conv.messages.length - 1].content 
-                    : 'Sem histórico de mensagens';
-                  const assignedOperator = operators.find(op => op.id === conv.operator_id);
-                  const { status, motivo } = getCommercialStatus(conv);
-                  const badge = getCommercialBadge(status);
-                  const waitInfo = getWaitInfo(conv);
+
+              {/* Chat Header Actions */}
+              <div className="flex items-center gap-3">
+                {/* Atendente selector */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-[#54656f] font-medium hidden md:inline">
+                    Atendente:
+                  </span>
+                  <select
+                    disabled={isAssigning}
+                    value={selectedConversation.operator_id || ''}
+                    onChange={async (e) => {
+                      const opId = e.target.value === '' ? null : e.target.value;
+                      setIsAssigning(true);
+                      const res = await assignOperatorToConversation(selectedConversation.id, opId);
+                      setIsAssigning(false);
+                      if (res.success) {
+                        selectedConversation.operator_id = opId || undefined;
+                        router.refresh();
+                      } else {
+                        alert('Erro ao atribuir atendente: ' + res.error);
+                      }
+                    }}
+                    className="bg-white border border-[#d1d7db] rounded-lg px-2 py-1 text-xs text-[#111b21] focus:ring-1 focus:ring-[#00a884] focus:outline-none cursor-pointer disabled:opacity-50"
+                  >
+                    <option value="">Não atribuído</option>
+                    {operators.map((op) => (
+                      <option key={op.id} value={op.id}>
+                        {op.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Botão Ver Auditoria Comercial (IA) */}
+                {activeAnalysis && (
+                  <button
+                    onClick={() => setIsAuditOpen(true)}
+                    className="px-3.5 py-1.5 bg-[#00a884] hover:bg-[#008f6f] active:bg-[#007a5e] text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Auditoria Comercial</span>
+                  </button>
+                )}
+              </div>
+            </header>
+
+            {/* Waiting Alert Bar (se cliente estiver esperando resposta) */}
+            {(() => {
+              const waitInfo = getWaitInfo(selectedConversation);
+              if (!waitInfo.text) return null;
+              return (
+                <div className="bg-[#fff3cd] border-b border-[#ffeeba] px-4 py-2 flex items-center justify-between text-xs text-[#856404] font-medium shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-600 animate-pulse shrink-0" />
+                    <span>
+                      <strong>Atenção ao tempo de resposta:</strong> {waitInfo.text}.
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-bold bg-amber-200/80 text-amber-900 px-2 py-0.5 rounded">
+                    Responder no celular
+                  </span>
+                </div>
+              );
+            })()}
+
+            {/* Messages Timeline (com fundo clássico do WhatsApp e balões fiéis) */}
+            <div 
+              className="flex-1 overflow-y-auto p-4 md:p-6 flex flex-col gap-3 custom-scrollbar"
+              style={{
+                backgroundImage: `radial-gradient(#d1d7db 0.75px, transparent 0.75px)`,
+                backgroundSize: '16px 16px'
+              }}
+            >
+              {/* WhatsApp Security Badge */}
+              <div className="self-center bg-[#ffeecd] border border-[#ffdf9d] text-[#54656f] text-[11px] px-3 py-1 rounded-lg text-center max-w-md shadow-2xs my-2">
+                🔒 As conversas são capturadas e auditadas em tempo real com inteligência artificial para controle comercial.
+              </div>
+
+              {sortedMessages.length === 0 ? (
+                <div className="flex-1 flex flex-col justify-center items-center text-[#8696a0]">
+                  <MessageSquare className="w-10 h-10 text-slate-300 mb-2" />
+                  <p className="text-xs">Nenhuma mensagem registrada nesta conversa.</p>
+                </div>
+              ) : (
+                sortedMessages.map((msg) => {
+                  const isAgent = msg.sender_type === 'agent' || msg.sender_type === 'atendente';
+                  const timeStr = formatDate(msg.created_at).split(' ')[1];
 
                   return (
                     <div
-                      key={conv.id}
-                      onClick={() => setSelectedId(conv.id)}
-                      className={`group cursor-pointer border rounded-xl p-3.5 transition-all duration-205 text-left ${
-                        isSelected 
-                          ? 'bg-emerald-50/60 border-emerald-500/40 shadow-sm' 
-                          : 'bg-white border-slate-100 hover:bg-slate-50 hover:border-slate-200'
+                      key={msg.id}
+                      className={`flex flex-col max-w-[80%] md:max-w-[65%] ${
+                        isAgent ? 'self-end items-end' : 'self-start items-start'
                       }`}
                     >
-                      <div className="flex justify-between items-start gap-2 mb-1.5">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${badge.dot}`} />
-                          <span className="truncate">{formatPhoneNumber(conv.client_phone)}</span>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {/* Commercial Badge */}
-                          <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-md border ${badge.bg} ${badge.text} ${badge.border}`}>
-                            {badge.label}
-                          </span>
+                      {/* Message Bubble WhatsApp */}
+                      <div
+                        className={`rounded-lg px-3 py-2 text-sm shadow-xs relative leading-relaxed ${
+                          isAgent
+                            ? 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none'
+                            : 'bg-white text-[#111b21] rounded-tl-none border border-slate-100'
+                        }`}
+                      >
+                        <p className="whitespace-pre-line text-[13px] text-[#111b21] pr-12">
+                          {msg.content}
+                        </p>
+
+                        {/* WhatsApp Time & Double Check in bubble */}
+                        <div className="flex items-center justify-end gap-1 text-[10px] text-[#667781] float-right -mt-2 -mr-1 ml-3 font-normal">
+                          <span>{timeStr}</span>
+                          {isAgent && <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />}
                         </div>
                       </div>
-
-                      {/* Alerta de Tempo de Espera do Cliente */}
-                      {waitInfo.text && (
-                        <div className="mb-2 px-2 py-1 bg-amber-50/90 border border-amber-300 rounded-lg text-[10px] text-amber-900 font-semibold flex items-center gap-1.5">
-                          <Clock className="w-3 h-3 text-amber-600 animate-pulse shrink-0" />
-                          <span className="truncate">{waitInfo.text}</span>
-                        </div>
-                      )}
-
-                      {/* Motivo da perda ou Risco destacado */}
-                      {motivo && (status === 'em_risco' || status === 'perdida') && (
-                        <div className="mb-2 px-2 py-1 bg-slate-50 border border-slate-200/80 rounded-lg text-[10px] text-slate-700 leading-tight">
-                          <span className="font-bold text-rose-600">Alerta: </span>
-                          <span className="truncate">{motivo.replace(/^FALHA GRAVE:\s*/i, '')}</span>
-                        </div>
-                      )}
                       
-                      <p className="text-xs text-slate-600 truncate line-clamp-1 mb-2 font-medium">
-                        {latestMsg}
-                      </p>
-
-                      <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-2.5 h-2.5" />
-                          {formatDate(conv.created_at)}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {conv.messages && (
-                            <span>{conv.messages.length} msgs</span>
-                          )}
-                          {analysis && (
-                            <span className="text-[10px] font-bold text-slate-500">
-                              Score: {analysis.overall_score}%
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {assignedOperator && (
-                        <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center gap-1 text-[9px] text-slate-500 font-semibold">
-                          <Users className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                          <span className="truncate">Atendente: {assignedOperator.name}</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Right Column: WhatsApp Web Styled Chat Area */}
-          <div className="lg:col-span-8 flex flex-col h-[calc(100vh-230px)]">
-            {selectedConversation ? (
-              <div className="bg-white border border-slate-200 rounded-2xl flex flex-col h-full overflow-hidden shadow-sm">
-                
-                {/* Chat Area Header */}
-                <div className="flex justify-between items-center bg-slate-50 border-b border-slate-200 px-6 py-4 shrink-0">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-500/20 flex items-center justify-center text-emerald-600">
-                      <Phone className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-bold text-slate-800">
-                        {formatPhoneNumber(selectedConversation.client_phone)}
-                      </h2>
-                      <p className="text-[10px] text-slate-400 font-medium mt-0.5">
-                        Criado em {formatDate(selectedConversation.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">
-                        Atendente:
-                      </span>
-                      <select
-                        disabled={isAssigning}
-                        value={selectedConversation.operator_id || ''}
-                        onChange={async (e) => {
-                          const opId = e.target.value === '' ? null : e.target.value;
-                          setIsAssigning(true);
-                          const res = await assignOperatorToConversation(selectedConversation.id, opId);
-                          setIsAssigning(false);
-                          if (res.success) {
-                            selectedConversation.operator_id = opId || undefined;
-                            router.refresh();
-                          } else {
-                            alert('Erro ao atribuir atendente: ' + res.error);
-                          }
-                        }}
-                        className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
-                      >
-                        <option value="">Não atribuído</option>
-                        {operators.map((op) => (
-                          <option key={op.id} value={op.id}>
-                            {op.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {activeAnalysis && (
-                      <button
-                        onClick={() => setIsAuditOpen(true)}
-                        className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100/80 text-emerald-600 border border-emerald-500/20 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm shrink-0"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Ver Auditoria Comercial</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Banner de Espera / Atenção ao Tempo de Resposta */}
-                {(() => {
-                  const waitInfo = getWaitInfo(selectedConversation);
-                  if (!waitInfo.text) return null;
-                  return (
-                    <div className="bg-amber-100/80 border-b border-amber-200 px-6 py-2 flex items-center justify-between text-xs text-amber-900 font-medium">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-amber-700 animate-pulse shrink-0" />
-                        <span>
-                          <strong>Atenção ao tempo de resposta:</strong> {waitInfo.text}.
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-bold text-amber-800 bg-amber-200/80 px-2 py-0.5 rounded-md">
-                        Responder no WhatsApp
+                      {/* Remetente label */}
+                      <span className="text-[10px] text-[#8696a0] mt-0.5 px-1 font-medium">
+                        {isAgent ? 'Atendente' : 'Cliente'}
                       </span>
                     </div>
                   );
-                })()}
+                })
+              )}
+            </div>
 
-                {/* Messages Timeline (WhatsApp style layout) */}
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 bg-[#efeae2] custom-scrollbar">
-                  {sortedMessages.length === 0 ? (
-                    <div className="flex-1 flex flex-col justify-center items-center text-slate-400">
-                      <MessageSquare className="w-8 h-8 text-slate-300 mb-2" />
-                      <p className="text-xs">Nenhuma mensagem registrada nesta conversa.</p>
-                    </div>
-                  ) : (
-                    sortedMessages.map((msg) => {
-                      const isAgent = msg.sender_type === 'agent' || msg.sender_type === 'atendente';
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`flex flex-col max-w-[75%] ${
-                            isAgent ? 'self-end items-end' : 'self-start items-start'
-                          }`}
-                        >
-                          {/* Message Bubble */}
-                          <div
-                            className={`rounded-2xl px-4 py-2.5 text-sm shadow-sm ${
-                              isAgent
-                                ? 'bg-[#d9fdd3] border border-[#d9fdd3] text-slate-800 rounded-tr-none'
-                                : 'bg-white border border-slate-100 text-slate-800 rounded-tl-none'
-                            }`}
-                          >
-                            <p className="whitespace-pre-line leading-relaxed text-xs">{msg.content}</p>
-                          </div>
-                          
-                          {/* Meta info below bubble */}
-                          <span className="text-[9px] text-slate-400 mt-1 px-1 font-semibold">
-                            {isAgent ? 'Atendente' : 'Cliente'} • {formatDate(msg.created_at).split(' ')[1]}
-                          </span>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-              </div>
-            ) : (
-              /* Selected leads empty state */
-              <div className="flex flex-col items-center justify-center border border-slate-200 bg-white rounded-2xl h-full text-center p-8 shadow-sm">
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-full mb-4">
-                  <MessageSquare className="w-10 h-10 text-emerald-600 animate-pulse" />
-                </div>
-                <h3 className="text-sm font-bold text-slate-800 mb-1">Nenhum atendimento selecionado</h3>
-                <p className="text-xs text-slate-555 max-w-xs">
-                  Selecione um cliente na lista à esquerda para carregar o histórico de mensagens e ter acesso à auditoria de IA.
-                </p>
-              </div>
-            )}
+            {/* Bottom Footer Info */}
+            <footer className="h-[52px] bg-[#f0f2f5] px-4 flex items-center justify-between border-t border-[#d1d7db] text-xs text-[#54656f] shrink-0">
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-[#00a884]" />
+                Modo Auditoria Ativo — Responda diretamente pelo aplicativo WhatsApp do atendente
+              </span>
+              {activeAnalysis && (
+                <button
+                  onClick={() => setIsAuditOpen(true)}
+                  className="text-xs font-bold text-[#00a884] hover:underline cursor-pointer"
+                >
+                  Ver Diagnóstico Completo →
+                </button>
+              )}
+            </footer>
           </div>
-        </div>
+        ) : (
+          /* Empty State estilo WhatsApp Web quando nenhum chat está selecionado */
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border-b-6 border-[#25d366]">
+            <div className="w-24 h-24 rounded-full bg-white/80 border border-[#d1d7db] flex items-center justify-center text-[#25d366] shadow-sm mb-6">
+              <Phone className="w-12 h-12 text-[#25d366]" />
+            </div>
+            <h2 className="text-2xl font-light text-[#41525d] mb-2 tracking-tight">
+              SupervisIA para WhatsApp
+            </h2>
+            <p className="text-sm text-[#667781] max-w-md leading-relaxed mb-6">
+              Audite e monitore os atendimentos da sua equipe comercial com inteligência artificial diretamente conectado ao seu WhatsApp.
+            </p>
+            <div className="text-xs text-[#8696a0] flex items-center gap-1.5">
+              <span>🔒 Mensagens protegidas e sincronizadas em tempo real.</span>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Modern, Light-themed AI Audit Modal - Full Screen */}
