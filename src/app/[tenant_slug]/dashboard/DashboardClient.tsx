@@ -68,6 +68,7 @@ interface Message {
 interface Conversation {
   id: string | number;
   client_phone: string;
+  channel?: 'whatsapp' | 'instagram' | string;
   operator_id?: string | null;
   created_at: string;
   analyses?: Analysis[] | Analysis | null;
@@ -87,6 +88,8 @@ interface Organization {
   id: string;
   name: string;
   whatsapp_status: string | null;
+  instagram_status?: string | null;
+  instagram_username?: string | null;
 }
 
 interface DashboardClientProps {
@@ -494,22 +497,22 @@ export default function DashboardClient({ initialConversations, organization, la
             </span>
           </div>
 
-          {/* Conexão WhatsApp */}
+          {/* Canais de Atendimento (WhatsApp + Instagram) */}
           <div className="relative group">
             <button
-              onClick={() => router.push(`/${tenantSlug}/dashboard/whatsapp`)}
+              onClick={() => router.push(`/${tenantSlug}/dashboard/canais`)}
               className="w-10 h-10 rounded-xl flex items-center justify-center text-[#54656f] hover:bg-[#e9edef] transition-all cursor-pointer relative"
-              aria-label="Conexão do WhatsApp"
+              aria-label="Canais de Atendimento (WhatsApp e Instagram)"
             >
               <Phone className="w-5 h-5" />
-              {organization?.whatsapp_status === 'connected' ? (
+              {organization?.whatsapp_status === 'connected' || organization?.instagram_status === 'connected' ? (
                 <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.9)]" />
               ) : (
                 <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(239,68,68,0.9)]" />
               )}
             </button>
             <span className="pointer-events-none absolute left-[68px] top-1/2 -translate-y-1/2 bg-slate-900 text-white text-xs font-medium px-2.5 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity shadow-lg whitespace-nowrap z-50">
-              Conexão WhatsApp {organization?.whatsapp_status === 'connected' ? '(Conectado)' : '(Desconectado)'}
+              Canais de Atendimento (WhatsApp & Instagram)
             </span>
           </div>
         </div>
@@ -723,11 +726,18 @@ export default function DashboardClient({ initialConversations, organization, la
 
                   {/* Main Conversation Card Info */}
                   <div className="flex-1 min-w-0">
-                    {/* Row 1: Phone / Name + Time */}
+                    {/* Row 1: Phone / Instagram ID + Time + Channel Tag */}
                     <div className="flex justify-between items-baseline mb-1">
-                      <h3 className="text-sm font-semibold text-[#111b21] truncate">
-                        {formatPhoneNumber(conv.client_phone)}
-                      </h3>
+                      <div className="flex items-center gap-1.5 truncate">
+                        {conv.channel === 'instagram' ? (
+                          <span className="text-[10px] bg-gradient-to-r from-purple-500 to-pink-500 text-white px-1.5 py-0.2 rounded font-bold shrink-0">
+                            Instagram
+                          </span>
+                        ) : null}
+                        <h3 className="text-sm font-semibold text-[#111b21] truncate">
+                          {conv.channel === 'instagram' ? `@${conv.client_phone}` : formatPhoneNumber(conv.client_phone)}
+                        </h3>
+                      </div>
                       <span className="text-[11px] text-[#667781] shrink-0 font-medium ml-2">
                         {timeFormatted}
                       </span>
@@ -827,15 +837,24 @@ export default function DashboardClient({ initialConversations, organization, la
           <div className="flex-1 flex flex-col h-full overflow-hidden">
             {/* WhatsApp Chat Header */}
             <header className="h-[60px] bg-[#f0f2f5] px-4 border-b border-[#d1d7db] flex items-center justify-between shrink-0 z-10 shadow-xs">
-              {/* Client Info (Avatar + Phone + Online/Date) */}
+              {/* Client Info (Avatar + Phone/Instagram + Online/Date) */}
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-[#dfe5e7] flex items-center justify-center text-[#54656f] shrink-0 font-semibold">
                   <User className="w-5 h-5 text-[#54656f]" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold text-[#111b21] leading-tight">
-                    {formatPhoneNumber(selectedConversation.client_phone)}
-                  </h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-[#111b21] leading-tight">
+                      {selectedConversation.channel === 'instagram' 
+                        ? `@${selectedConversation.client_phone}` 
+                        : formatPhoneNumber(selectedConversation.client_phone)}
+                    </h2>
+                    {selectedConversation.channel === 'instagram' && (
+                      <span className="text-[10px] bg-gradient-to-r from-purple-500 to-pink-500 text-white px-2 py-0.5 rounded-full font-bold">
+                        Instagram
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[11px] text-[#667781] leading-tight mt-0.5">
                     Criado em {formatDate(selectedConversation.created_at)}
                   </p>
