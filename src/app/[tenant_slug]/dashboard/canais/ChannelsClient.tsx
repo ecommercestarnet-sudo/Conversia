@@ -21,7 +21,7 @@ interface ChannelsClientProps {
   tenantSlug: string;
 }
 
-const META_APP_ID = '1613773990527200';
+const INSTAGRAM_APP_ID = '2457047531452520';
 
 export default function ChannelsClient({ company, lastStatusLog, tenantSlug }: ChannelsClientProps) {
   const router = useRouter();
@@ -30,21 +30,19 @@ export default function ChannelsClient({ company, lastStatusLog, tenantSlug }: C
   const isWhatsappConnected = company?.whatsapp_status === 'connected';
   const isInstagramConnected = company?.instagram_status === 'connected';
 
-  // Gerar URL do Meta OAuth para Instagram
+  // Gerar URL oficial do Instagram Business Login
   const handleConnectInstagram = () => {
     const redirectUri = typeof window !== 'undefined' 
       ? `${window.location.origin}/api/auth/instagram/callback`
       : 'https://conversia-two.vercel.app/api/auth/instagram/callback';
 
     const scopes = [
-      'instagram_basic',
-      'instagram_manage_messages',
-      'pages_show_list',
-      'pages_read_engagement',
-      'pages_manage_metadata'
+      'instagram_business_basic',
+      'instagram_business_manage_messages',
+      'instagram_business_manage_comments'
     ].join(',');
 
-    const authUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${tenantSlug}&scope=${encodeURIComponent(scopes)}&response_type=code`;
+    const authUrl = `https://www.instagram.com/oauth/authorize?enable_fb_login=0&force_authentication=1&client_id=${INSTAGRAM_APP_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scopes)}&state=${tenantSlug}`;
 
     window.location.href = authUrl;
   };
