@@ -48,24 +48,66 @@ const MIN_NEW_MESSAGES_SINCE_LAST = 2; // at least 2 new messages since last ana
 export async function analyzeConversation(conversationId: string, force: boolean = false) {
   console.log(`[AI Analyzer] Starting AI analysis for conversation ID: ${conversationId} (force=${force})`);
 
-  // Step 1: Fetch messages from Supabase
-  let messages;
-  try {
-    console.log(`[AI Analyzer] Fetching messages from Supabase for conversation: ${conversationId}`);
-    const { data, error: selectError } = await supabase
-      .from('messages')
-      .select('id, sender_type, content, created_at')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true });
+  // Step 1: Fetch context (messages, conversation, org, playbook) via SECURITY DEFINER RPC (works even with anon key in webhooks)
+  let messages: any[] | null = null;
+  let orgId = null;
+  let clientPhone = '';
+  let operatorId = null;
+  let alertSent = false;
+  let lastAnalyzedAt: string | null = null;
+  let messageCountAtAnalysis = 0;
+  let playbook: any = null;
+  let ownerWhatsapp = null;
+  let instanceName = null;
+  let orgName = '';
 
-    if (selectError) {
-      console.error(`[AI Analyzer] Supabase SELECT query error for conversation ${conversationId}:`, selectError);
-      throw new Error(`Database SELECT query failed: ${selectError.message}`);
+  try {
+    const { data: rpcCtx } = await supabase.rpc('get_conversation_analysis_context', {
+      p_conversation_id: String(conversationId),
+    });
+
+    if (rpcCtx) {
+      messages = rpcCtx.messages || [];
+      if (rpcCtx.conversation) {
+        orgId = rpcCtx.conversation.organization_id;
+        clientPhone = rpcCtx.conversation.client_phone || '';
+        operatorId = rpcCtx.conversation.operator_id;
+        alertSent = rpcCtx.conversation.alert_sent || false;
+        lastAnalyzedAt = rpcCtx.conversation.last_analyzed_at;
+        messageCountAtAnalysis = rpcCtx.conversation.message_count_at_analysis || 0;
+      }
+      if (rpcCtx.organization) {
+        orgName = rpcCtx.organization.name || '';
+        ownerWhatsapp = rpcCtx.organization.owner_whatsapp;
+        instanceName = rpcCtx.organization.evolution_instance_name;
+      }
+      if (rpcCtx.playbook) {
+        playbook = rpcCtx.playbook;
+      }
     }
-    messages = data;
-  } catch (err: any) {
-    console.error(`[AI Analyzer] Failed database operation when fetching messages for conversation ${conversationId}:`, err);
-    throw err;
+  } catch (rpcErr) {
+    console.warn(`[AI Analyzer] RPC context load fallback for conversation ${conversationId}:`, rpcErr);
+  }
+
+  // Fallback to direct queries if RPC was not available
+  if (!messages) {
+    try {
+      console.log(`[AI Analyzer] Fetching messages from Supabase for conversation: ${conversationId}`);
+      const { data, error: selectError } = await supabase
+        .from('messages')
+        .select('id, sender_type, content, created_at')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+
+      if (selectError) {
+        console.error(`[AI Analyzer] Supabase SELECT query error for conversation ${conversationId}:`, selectError);
+        throw new Error(`Database SELECT query failed: ${selectError.message}`);
+      }
+      messages = data;
+    } catch (err: any) {
+      console.error(`[AI Analyzer] Failed database operation when fetching messages for conversation ${conversationId}:`, err);
+      throw err;
+    }
   }
 
   if (!messages || messages.length === 0) {
@@ -86,40 +128,31 @@ export async function analyzeConversation(conversationId: string, force: boolean
     }
   }
 
-  // Step 1.5: Fetch conversation data including debouncing fields
-  let orgId = null;
-  let clientPhone = '';
-  let operatorId = null;
-  let alertSent = false;
-  let lastAnalyzedAt: string | null = null;
-  let messageCountAtAnalysis = 0;
-  try {
-    const { data: convData, error: convErr } = await supabase
-      .from('conversations')
-      .select('organization_id, client_phone, operator_id, alert_sent, last_analyzed_at, message_count_at_analysis')
-      .eq('id', conversationId)
-      .maybeSingle();
+  // Fallback direct fetch if orgId was not populated by RPC
+  if (!orgId) {
+    try {
+      const { data: convData, error: convErr } = await supabase
+        .from('conversations')
+        .select('organization_id, client_phone, operator_id, alert_sent, last_analyzed_at, message_count_at_analysis')
+        .eq('id', conversationId)
+        .maybeSingle();
 
-    if (convErr) {
-      console.error(`[AI Analyzer] Error fetching conversation data for conversation ${conversationId}:`, convErr);
-    } else if (convData) {
-      orgId = convData.organization_id;
-      clientPhone = convData.client_phone || '';
-      operatorId = convData.operator_id;
-      alertSent = convData.alert_sent || false;
-      lastAnalyzedAt = convData.last_analyzed_at;
-      messageCountAtAnalysis = convData.message_count_at_analysis || 0;
+      if (convErr) {
+        console.error(`[AI Analyzer] Error fetching conversation data for conversation ${conversationId}:`, convErr);
+      } else if (convData) {
+        orgId = convData.organization_id;
+        clientPhone = convData.client_phone || '';
+        operatorId = convData.operator_id;
+        alertSent = convData.alert_sent || false;
+        lastAnalyzedAt = convData.last_analyzed_at;
+        messageCountAtAnalysis = convData.message_count_at_analysis || 0;
+      }
+    } catch (err: any) {
+      console.error(`[AI Analyzer] Failed to fetch conversation data for conversation ${conversationId}:`, err);
     }
-  } catch (err: any) {
-    console.error(`[AI Analyzer] Failed to fetch conversation data for conversation ${conversationId}:`, err);
   }
 
-  let playbook = null;
-  let ownerWhatsapp = null;
-  let instanceName = null;
-  let orgName = '';
-
-  if (orgId) {
+  if (orgId && !playbook) {
     try {
       const { data: orgData } = await supabase
         .from('organizations')
@@ -600,47 +633,61 @@ Atenção: Retorne APENAS o objeto JSON válido, sem tags markdown ou texto expl
       acao_resgate_sugerida: acaoResgate,
     };
 
-    const { error: upsertError } = await supabase
-      .from('analyses')
-      .upsert({
-        conversation_id: conversationId,
-        overall_score: analysisResult.overall_score,
-        scores: scoresData,
-        summary: analysisResult.summary,
-        strengths: analysisResult.strengths,
-        weaknesses: analysisResult.weaknesses,
-        recommendations: analysisResult.recommendations,
-        objections: analysisResult.objections,
-      }, {
-        onConflict: 'conversation_id',
-      });
+    const { data: rpcSavedAnalysis, error: rpcSaveAnalysisError } = await supabase.rpc('save_conversation_analysis_rpc', {
+      p_conversation_id: String(conversationId),
+      p_overall_score: analysisResult.overall_score,
+      p_scores: scoresData,
+      p_summary: analysisResult.summary,
+      p_strengths: analysisResult.strengths || [],
+      p_weaknesses: analysisResult.weaknesses || [],
+      p_recommendations: analysisResult.recommendations || [],
+      p_objections: analysisResult.objections || [],
+      p_message_count: messages.length,
+    });
 
-    if (upsertError) {
-      console.error(`[AI Analyzer] Supabase UPSERT query error for analysis of conversation ${conversationId}:`, upsertError);
-      throw new Error(`Database UPSERT query failed: ${upsertError.message}`);
+    if (rpcSaveAnalysisError || !rpcSavedAnalysis) {
+      if (rpcSaveAnalysisError) {
+        console.warn(`[AI Analyzer] RPC save_conversation_analysis_rpc fallback:`, rpcSaveAnalysisError);
+      }
+
+      const { error: upsertError } = await supabase
+        .from('analyses')
+        .upsert({
+          conversation_id: conversationId,
+          overall_score: analysisResult.overall_score,
+          scores: scoresData,
+          summary: analysisResult.summary,
+          strengths: analysisResult.strengths,
+          weaknesses: analysisResult.weaknesses,
+          recommendations: analysisResult.recommendations,
+          objections: analysisResult.objections,
+        }, {
+          onConflict: 'conversation_id',
+        });
+
+      if (upsertError) {
+        console.error(`[AI Analyzer] Supabase UPSERT query error for analysis of conversation ${conversationId}:`, upsertError);
+        throw new Error(`Database UPSERT query failed: ${upsertError.message}`);
+      }
+
+      // Step 5.5: Update debouncing columns
+      try {
+        await supabase
+          .from('conversations')
+          .update({
+            last_analyzed_at: new Date().toISOString(),
+            message_count_at_analysis: messages.length,
+          })
+          .eq('id', conversationId);
+      } catch (e) {
+        console.error('[AI Analyzer] Error updating debouncing columns:', e);
+      }
     }
 
     console.log(`[AI Analyzer] Analysis successfully saved/updated for conversation ${conversationId}`);
   } catch (err: any) {
     console.error(`[AI Analyzer] Database operation failed when saving analysis for conversation ${conversationId}:`, err);
     throw err;
-  }
-
-  // Step 5.5: Update debouncing columns
-  try {
-    const { error: debounceErr } = await supabase
-      .from('conversations')
-      .update({
-        last_analyzed_at: new Date().toISOString(),
-        message_count_at_analysis: messages.length,
-      })
-      .eq('id', conversationId);
-
-    if (debounceErr) {
-      console.error(`[AI Analyzer] Failed to update debouncing columns:`, debounceErr.message);
-    }
-  } catch (e) {
-    console.error('[AI Analyzer] Error updating debouncing columns:', e);
   }
 
   // Step 6: Dispatch Intelligent Deal Rescue Alert (Zero False Positives)

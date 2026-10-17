@@ -82,6 +82,18 @@ export async function GET(req: NextRequest) {
       console.warn('[INSTAGRAM OAUTH] Could not fetch username:', uErr);
     }
 
+    // 3.5. Inscrever a conta do Instagram no Webhook do App da Meta (obrigatório para receber mensagens!)
+    try {
+      const subRes = await fetch(
+        `https://graph.instagram.com/v21.0/me/subscribed_apps?subscribed_fields=messages,messaging_postbacks,messaging_seen&access_token=${accessToken}`,
+        { method: 'POST' }
+      );
+      const subData = await subRes.json();
+      console.log('[INSTAGRAM OAUTH] Webhook subscription result:', subData);
+    } catch (subErr) {
+      console.warn('[INSTAGRAM OAUTH] Could not subscribe account to webhook:', subErr);
+    }
+
     // 4. Salvar na organização no Supabase usando o cliente autenticado do usuário!
     const supabase = await createClient();
 
