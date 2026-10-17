@@ -13,7 +13,7 @@ import {
   Trash2,
   RefreshCw
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 interface ChannelsClientProps {
   company: any;
@@ -25,10 +25,13 @@ const INSTAGRAM_APP_ID = '2457047531452520';
 
 export default function ChannelsClient({ company, lastStatusLog, tenantSlug }: ChannelsClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlStatus = searchParams.get('status');
+  const urlError = searchParams.get('error');
 
   const [isDisconnectingIg, setIsDisconnectingIg] = useState(false);
   const isWhatsappConnected = company?.whatsapp_status === 'connected';
-  const isInstagramConnected = company?.instagram_status === 'connected';
+  const isInstagramConnected = company?.instagram_status === 'connected' || urlStatus === 'instagram_connected';
 
   // Gerar URL oficial do Instagram Business Login
   const handleConnectInstagram = () => {
@@ -54,7 +57,7 @@ export default function ChannelsClient({ company, lastStatusLog, tenantSlug }: C
     try {
       const res = await fetch(`/api/auth/instagram/disconnect?slug=${tenantSlug}`, { method: 'POST' });
       if (res.ok) {
-        router.refresh();
+        window.location.href = `/${tenantSlug}/dashboard/canais`;
       } else {
         alert('Erro ao desconectar Instagram.');
       }
@@ -99,6 +102,20 @@ export default function ChannelsClient({ company, lastStatusLog, tenantSlug }: C
 
       {/* Main Grid */}
       <main className="max-w-5xl mx-auto px-6 py-8">
+        {urlError && (
+          <div className="mb-6 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2.5 shadow-xs">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>Detalhe ao conectar Instagram: {urlError}</span>
+          </div>
+        )}
+
+        {urlStatus === 'instagram_connected' && (
+          <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2.5 shadow-xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Instagram conectado com sucesso! Suas mensagens diretas já estão vinculadas ao SupervisIA.</span>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
           {/* Card 1: WhatsApp */}

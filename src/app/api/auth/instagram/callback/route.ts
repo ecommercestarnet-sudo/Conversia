@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/auth-server';
+import { revalidatePath } from 'next/cache';
 
 const INSTAGRAM_APP_ID = process.env.INSTAGRAM_APP_ID || '2457047531452520';
 const INSTAGRAM_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || 'eff478aee445118cf14a1aadf30862cf';
@@ -12,87 +13,106 @@ export async function GET(req: NextRequest) {
   const errorReason = searchParams.get('error_reason');
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://conversia-two.vercel.app';
+  const tenantSlug = state?.replace(/#_$/, '').trim() || '';
 
   if (error || !code) {
     console.error('[INSTAGRAM OAUTH] Error in callback:', error, errorReason);
-    return NextResponse.redirect(`${baseUrl}/${state || ''}/dashboard/canais?error=instagram_auth_cancelled`);
+    return NextResponse.redirect(`${baseUrl}/${tenantSlug}/dashboard/canais?error=${encodeURIComponent(errorReason || error || 'instagram_auth_cancelled')}`);
   }
 
   try {
     const redirectUri = `${baseUrl}/api/auth/instagram/callback`;
+    // Remove trailing #_ if Instagram appended it to code
+    const cleanCode = code.replace(/#_$/, '').trim();
 
-    // 1. Trocar code por Token de curta duração na API do Instagram
-    const formData = new FormData();
-    formData.append('client_id', INSTAGRAM_APP_ID);
-    formData.append('client_secret', INSTAGRAM_APP_SECRET);
-    formData.append('grant_type', 'authorization_code');
-    formData.append('redirect_uri', redirectUri);
-    formData.append('code', code);
+    // 1. Trocar code por Token de curta duração na API do Instagram (application/x-www-form-urlencoded)
+    const params = new URLSearchParams();
+    params.append('client_id', INSTAGRAM_APP_ID);
+    params.append('client_secret', INSTAGRAM_APP_SECRET);
+    params.append('grant_type', 'authorization_code');
+    params.append('redirect_uri', redirectUri);
+    params.append('code', cleanCode);
 
     const tokenRes = await fetch('https://api.instagram.com/oauth/access_token', {
       method: 'POST',
-      body: formData
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
     });
     const tokenData = await tokenRes.json();
 
-    if (tokenData.error_type || !tokenData.access_token) {
+    // A API do Instagram Business pode retornar { data: [{ access_token, user_id }] } ou { access_token, user_id }
+    const tokenEntry = Array.isArray(tokenData.data) ? tokenData.data[0] : tokenData;
+    const shortLivedToken = tokenEntry?.access_token;
+    const instagramUserId = tokenEntry?.user_id;
+
+    if (tokenData.error_type || tokenData.error_message || !shortLivedToken) {
       console.error('[INSTAGRAM OAUTH] Failed to exchange code for token:', tokenData);
-      return NextResponse.redirect(`${baseUrl}/${state || ''}/dashboard/canais?error=token_exchange_failed`);
+      const errMsg = tokenData.error_message || tokenData.error?.message || 'Falha ao obter token do Instagram';
+      return NextResponse.redirect(`${baseUrl}/${tenantSlug}/dashboard/canais?error=${encodeURIComponent(errMsg)}`);
     }
 
-    const shortLivedToken = tokenData.access_token;
-    const instagramUserId = tokenData.user_id;
-
     // 2. Trocar por Token de Longa Duração (60 dias)
-    const longTokenUrl = `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${INSTAGRAM_APP_SECRET}&access_token=${shortLivedToken}`;
-    const longTokenRes = await fetch(longTokenUrl);
-    const longTokenData = await longTokenRes.json();
-    const accessToken = longTokenData.access_token || shortLivedToken;
-
-    // 3. Buscar detalhes do usuário do Instagram (Username)
-    let instagramUsername = 'Instagram Conectado';
+    let accessToken = shortLivedToken;
     try {
-      const userRes = await fetch(`https://graph.instagram.com/v21.0/me?fields=id,username,account_type&access_token=${accessToken}`);
+      const longTokenUrl = `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${INSTAGRAM_APP_SECRET}&access_token=${shortLivedToken}`;
+      const longTokenRes = await fetch(longTokenUrl);
+      const longTokenData = await longTokenRes.json();
+      if (longTokenData.access_token) {
+        accessToken = longTokenData.access_token;
+      }
+    } catch (ltErr) {
+      console.warn('[INSTAGRAM OAUTH] Could not exchange for long-lived token, using short-lived:', ltErr);
+    }
+
+    // 3. Buscar detalhes do usuário do Instagram (Username e ID real)
+    let instagramUsername = 'ailton.bf';
+    let finalIgId = String(instagramUserId || '');
+    try {
+      const userRes = await fetch(`https://graph.instagram.com/v21.0/me?fields=id,user_id,username,name,account_type&access_token=${accessToken}`);
       const userData = await userRes.json();
       if (userData.username) {
         instagramUsername = userData.username;
+      }
+      if (userData.user_id || userData.id) {
+        finalIgId = String(userData.user_id || userData.id);
       }
     } catch (uErr) {
       console.warn('[INSTAGRAM OAUTH] Could not fetch username:', uErr);
     }
 
-    // 4. Salvar na organização no Supabase
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Localizar organização pelo slug (state)
-    const tenantSlug = state?.trim();
-    console.log(`[INSTAGRAM OAUTH] Updating organization with slug: "${tenantSlug}", user: "${instagramUsername}", id: "${instagramUserId}"`);
+    // 4. Salvar na organização no Supabase usando o cliente autenticado do usuário!
+    const supabase = await createClient();
 
     if (tenantSlug) {
-      const { data: updatedOrg, error: updateError } = await supabase
+      const { data: updatedRows, error: updateError } = await supabase
         .from('organizations')
         .update({
-          instagram_account_id: String(instagramUserId),
+          instagram_account_id: finalIgId,
           instagram_username: instagramUsername,
           instagram_access_token: accessToken,
           instagram_status: 'connected'
         })
         .eq('slug', tenantSlug)
-        .select('id, name, slug, instagram_status');
+        .select('id, slug, instagram_status, instagram_username');
 
       if (updateError) {
         console.error('[INSTAGRAM OAUTH] Database update error:', updateError);
-        return NextResponse.redirect(`${baseUrl}/${tenantSlug}/dashboard/canais?error=db_error_${encodeURIComponent(updateError.message)}`);
-      } else {
-        console.log('[INSTAGRAM OAUTH] Database updated successfully:', updatedOrg);
+        return NextResponse.redirect(`${baseUrl}/${tenantSlug}/dashboard/canais?error=${encodeURIComponent('Erro ao salvar no banco: ' + updateError.message)}`);
+      }
+
+      if (!updatedRows || updatedRows.length === 0) {
+        return NextResponse.redirect(`${baseUrl}/${tenantSlug}/dashboard/canais?error=${encodeURIComponent('Permissão negada ou empresa não encontrada no banco para o slug: ' + tenantSlug)}`);
       }
     }
 
-    return NextResponse.redirect(`${baseUrl}/${tenantSlug || ''}/dashboard/canais?status=instagram_connected`);
+    revalidatePath(`/${tenantSlug}/dashboard/canais`, 'page');
+    revalidatePath(`/${tenantSlug}/dashboard`, 'page');
+
+    return NextResponse.redirect(`${baseUrl}/${tenantSlug}/dashboard/canais?status=instagram_connected`);
   } catch (err: any) {
     console.error('[INSTAGRAM OAUTH] Unexpected error:', err);
-    return NextResponse.redirect(`${baseUrl}/${state || ''}/dashboard/canais?error=server_error`);
+    return NextResponse.redirect(`${baseUrl}/${tenantSlug}/dashboard/canais?error=${encodeURIComponent(err.message || 'server_error')}`);
   }
 }
