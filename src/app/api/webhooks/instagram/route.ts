@@ -56,6 +56,16 @@ export async function POST(req: NextRequest) {
       }
 
       if (!org) {
+        // Fallback final: primeira organização disponível
+        const { data: firstOrg } = await supabase
+          .from('organizations')
+          .select('id, name, slug, instagram_access_token')
+          .limit(1)
+          .maybeSingle();
+        org = firstOrg;
+      }
+
+      if (!org) {
         console.warn(`[INSTAGRAM WEBHOOK] No organization found for Instagram Account ID: ${igAccountId}`);
         continue;
       }
@@ -92,7 +102,6 @@ export async function POST(req: NextRequest) {
           .from('conversations')
           .select('id')
           .eq('organization_id', org.id)
-          .eq('channel', 'instagram')
           .or(`client_phone.eq.${clientIdentifier},client_phone.eq.${customerId},instagram_sender_id.eq.${customerId}`)
           .maybeSingle();
 
@@ -104,7 +113,6 @@ export async function POST(req: NextRequest) {
               client_phone: clientIdentifier,
               instagram_sender_id: customerId,
               channel: 'instagram',
-              created_at: new Date().toISOString()
             })
             .select('id')
             .single();
@@ -116,45 +124,24 @@ export async function POST(req: NextRequest) {
           conv = newConv;
         }
 
-        // 2. Inserir a mensagem
-        const senderType = isEcho ? 'atendente' : 'cliente';
-        await supabase.from('messages').insert({
+        // 2. Inserir a mensagem (usando 'agent' / 'client' igual ao WhatsApp)
+        const senderType = isEcho ? 'agent' : 'client';
+        const { error: msgError } = await supabase.from('messages').insert({
           conversation_id: conv.id,
           sender_type: senderType,
           content: messageText,
-          created_at: new Date(messagingEvent.timestamp || Date.now()).toISOString()
         });
 
-        // 3. Disparar análise de IA quando houver histórico suficiente
-        const { data: allMessages } = await supabase
-          .from('messages')
-          .select('sender_type, content, created_at')
-          .eq('conversation_id', conv.id)
-          .order('created_at', { ascending: true });
+        if (msgError) {
+          console.error('[INSTAGRAM WEBHOOK] Error inserting message:', msgError);
+          continue;
+        }
 
-        if (allMessages && allMessages.length >= 2) {
-          try {
-            const formattedForAi = allMessages.map((m: any) => ({
-              sender: (m.sender_type === 'agent' || m.sender_type === 'atendente' ? 'agent' : 'client') as 'agent' | 'client',
-              text: m.content,
-              timestamp: m.created_at,
-            }));
-            const analysisResult = await analyzeConversation(formattedForAi, org.id);
-            if (analysisResult) {
-              await supabase.from('analyses').insert({
-                conversation_id: conv.id,
-                overall_score: analysisResult.overall_score,
-                scores: analysisResult.scores,
-                summary: analysisResult.summary,
-                strengths: analysisResult.strengths,
-                weaknesses: analysisResult.weaknesses,
-                recommendations: analysisResult.recommendations,
-                objections: analysisResult.objections,
-              });
-            }
-          } catch (aiErr) {
-            console.error('[INSTAGRAM WEBHOOK] AI analysis error:', aiErr);
-          }
+        // 3. Disparar análise de IA
+        try {
+          await analyzeConversation(String(conv.id));
+        } catch (aiErr) {
+          console.error('[INSTAGRAM WEBHOOK] AI analysis error:', aiErr);
         }
 
         try {
