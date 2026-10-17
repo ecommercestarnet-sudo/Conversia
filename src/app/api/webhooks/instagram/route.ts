@@ -54,16 +54,6 @@ export async function POST(req: NextRequest) {
       }
 
       if (!org) {
-        const { data: fallbackOrg } = await supabase
-          .from('organizations')
-          .select('id, name, slug, instagram_account_id, instagram_access_token')
-          .eq('instagram_status', 'connected')
-          .limit(1)
-          .maybeSingle();
-        org = fallbackOrg;
-      }
-
-      if (!org) {
         console.warn(`[INSTAGRAM WEBHOOK] No organization found for Instagram Account ID: ${igAccountId}`);
         continue;
       }
