@@ -193,13 +193,27 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // 3. Disparar análise de IA
+        // 3. Disparar análise de IA do Playbook Comercial
         try {
           if (convId) {
             await analyzeConversation(String(convId));
           }
         } catch (aiErr) {
           console.error('[INSTAGRAM WEBHOOK] AI analysis error:', aiErr);
+        }
+
+        // 4. Disparar o motor de alerta em tempo real (WhatsApp do gestor/vendedor para panfletagem, preço seco, etc)
+        try {
+          if (convId) {
+            const edgeWebhookUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://erojwnigzuhnzxjsdbxe.supabase.co'}/functions/v1/whatsapp-webhook`;
+            await fetch(edgeWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'evaluate_alert', conversationId: String(convId) })
+            });
+          }
+        } catch (alertErr) {
+          console.error('[INSTAGRAM WEBHOOK] Realtime alert error:', alertErr);
         }
 
         try {

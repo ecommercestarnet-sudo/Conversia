@@ -20,6 +20,13 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true, ...result }), { headers: { 'Content-Type': 'application/json' } })
     }
 
+    // Avaliação em tempo real de infrações para qualquer canal (WhatsApp ou Instagram Direct)
+    if (reqBody?.action === 'evaluate_alert' && reqBody?.conversationId) {
+      const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
+      const result = await runRealtimeAlertEngine(supabase, String(reqBody.conversationId), { ...getEvolutionConfig(), mode: 'message' })
+      return new Response(JSON.stringify({ success: true, result }), { headers: { 'Content-Type': 'application/json' } })
+    }
+
     console.log('Payload completo:', JSON.stringify(reqBody))
 
     const event = (reqBody.event || '').toLowerCase()
