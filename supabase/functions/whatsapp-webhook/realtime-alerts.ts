@@ -291,6 +291,11 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
   if (!verdict) return
   console.log(`${tag} Veredito IA:`, JSON.stringify(verdict))
 
+  // Normaliza confiança caso a IA tenha retornado decimal (ex: 0.95 em vez de 95)
+  if (typeof verdict.confianca === 'number' && verdict.confianca <= 1 && verdict.confianca > 0) {
+    verdict.confianca = Math.round(verdict.confianca * 100);
+  }
+
   // 7. Validação determinística (o código tem a palavra final)
   // Confiança mínima exigida: 85% (ou a configurada no Playbook)
   const minConfidenceRequired = Math.max(85, rules.min_confidence_score || 85)
@@ -328,7 +333,7 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
       const semDiagnostico = verdict.houve_investigacao_previa === false
       const infracaoProcesso = enviouPrecos && (semDiagnostico || !finalizouComPergunta)
       const objectiveOnly = !lastAgentEndsWithQuestion // falta de pontuação/pergunta é fato objetivo
-      if (infracaoProcesso && (objectiveOnly || confidenceOk) && verdict.disparar_alerta !== false) {
+      if (infracaoProcesso && (objectiveOnly || confidenceOk || verdict.infracao_detectada === 'panfletagem')) {
         finalInfracao = 'panfletagem'
       }
     }
