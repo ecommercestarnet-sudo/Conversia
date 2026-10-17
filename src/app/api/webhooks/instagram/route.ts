@@ -131,14 +131,16 @@ export async function POST(req: NextRequest) {
             console.error('[INSTAGRAM WEBHOOK] RPC save error, trying direct fallback:', rpcSaveError);
           }
           // Fallback direto caso necessário
-          let { data: conv } = await supabase
+          const { data: existingConv } = await supabase
             .from('conversations')
-            .select('id, client_phone')
+            .select('id')
             .eq('organization_id', org.id)
             .or(`client_phone.eq.${clientIdentifier},client_phone.eq.${customerId},instagram_sender_id.eq.${customerId}`)
             .maybeSingle();
 
-          if (!conv) {
+          if (existingConv?.id) {
+            convId = existingConv.id;
+          } else {
             const { data: newConv, error: createConvError } = await supabase
               .from('conversations')
               .insert({
@@ -150,14 +152,12 @@ export async function POST(req: NextRequest) {
               .select('id')
               .single();
 
-            if (createConvError) {
+            if (createConvError || !newConv) {
               console.error('[INSTAGRAM WEBHOOK] Error creating conversation:', createConvError);
               continue;
             }
-            conv = newConv;
+            convId = newConv.id;
           }
-
-          convId = conv.id;
 
           const { error: msgError } = await supabase.from('messages').insert({
             conversation_id: convId,
