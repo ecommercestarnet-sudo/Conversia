@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
+import { analyzeConversation } from '@/lib/ai-analyzer';
+import { revalidatePath } from 'next/cache';
 
 const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN || 'conversia_instagram_verify_token_2026';
 
@@ -12,7 +14,10 @@ export async function GET(req: NextRequest) {
 
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
     console.log('[INSTAGRAM WEBHOOK] Verified successfully by Meta!');
-    return new Response(challenge, { status: 200 });
+    return new Response(challenge || '', {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' },
+    });
   }
 
   return new Response('Forbidden', { status: 403 });
@@ -28,20 +33,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'ignored' }, { status: 200 });
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
     // Iterar pelas entradas do webhook da Meta
     for (const entry of body.entry || []) {
-      const igAccountId = entry.id; // ID da conta do Instagram / Página receptora
+      const igAccountId = String(entry.id || ''); // ID da conta do Instagram / Página receptora
 
-      // Buscar organização dona dessa conta do Instagram
-      const { data: org } = await supabase
+      // Buscar organização dona dessa conta do Instagram (ou qualquer organização com instagram_status = 'connected' caso o ID seja IGSID)
+      let { data: org } = await supabase
         .from('organizations')
-        .select('id, name, slug')
-        .or(`instagram_account_id.eq.${igAccountId}`)
+        .select('id, name, slug, instagram_access_token')
+        .eq('instagram_account_id', igAccountId)
         .maybeSingle();
+
+      if (!org) {
+        // Fallback: buscar organização que está com instagram conectado
+        const { data: fallbackOrg } = await supabase
+          .from('organizations')
+          .select('id, name, slug, instagram_access_token')
+          .eq('instagram_status', 'connected')
+          .limit(1)
+          .maybeSingle();
+        org = fallbackOrg;
+      }
 
       if (!org) {
         console.warn(`[INSTAGRAM WEBHOOK] No organization found for Instagram Account ID: ${igAccountId}`);
@@ -49,50 +61,39 @@ export async function POST(req: NextRequest) {
       }
 
       for (const messagingEvent of entry.messaging || []) {
-        const senderId = messagingEvent.sender?.id;
-        const recipientId = messagingEvent.recipient?.id;
+        const senderId = String(messagingEvent.sender?.id || '');
+        const recipientId = String(messagingEvent.recipient?.id || '');
         const message = messagingEvent.message;
 
-        if (!message || message.is_echo) {
-          // Se for echo (enviado pelo atendente via celular/app)
-          if (message && message.is_echo && senderId === igAccountId) {
-            const customerId = recipientId;
-            const text = message.text || (message.attachments ? '[Mídia do Instagram]' : '');
+        if (!message) continue;
 
-            // Localizar conversa existente
-            const { data: existingConv } = await supabase
-              .from('conversations')
-              .select('id')
-              .eq('organization_id', org.id)
-              .eq('channel', 'instagram')
-              .eq('client_phone', customerId)
-              .maybeSingle();
-
-            if (existingConv && text) {
-              await supabase.from('messages').insert({
-                conversation_id: existingConv.id,
-                sender_type: 'atendente',
-                content: text,
-                created_at: new Date(messagingEvent.timestamp || Date.now()).toISOString()
-              });
-            }
-          }
-          continue;
-        }
-
-        // Mensagem recebida de um CLIENTE (Seguidor)
-        const customerId = senderId;
+        const isEcho = Boolean(message.is_echo || senderId === igAccountId);
+        const customerId = isEcho ? recipientId : senderId;
         const messageText = message.text || (message.attachments ? '[Mídia do Instagram]' : '');
 
-        if (!messageText) continue;
+        if (!messageText || !customerId) continue;
 
-        // 1. Buscar ou criar conversa para esse cliente no Instagram
+        // Tentar buscar o @username do seguidor na Graph API se tivermos token
+        let clientIdentifier = customerId;
+        if (!isEcho && org.instagram_access_token) {
+          try {
+            const profileRes = await fetch(`https://graph.instagram.com/v21.0/${customerId}?fields=username,name&access_token=${org.instagram_access_token}`);
+            const profileData = await profileRes.json();
+            if (profileData?.username) {
+              clientIdentifier = profileData.username;
+            }
+          } catch (pErr) {
+            // Mantém o ID numérico se não conseguir resolver o username
+          }
+        }
+
+        // 1. Buscar conversa existente para esse cliente no Instagram
         let { data: conv } = await supabase
           .from('conversations')
           .select('id')
           .eq('organization_id', org.id)
           .eq('channel', 'instagram')
-          .eq('client_phone', customerId)
+          .or(`client_phone.eq.${clientIdentifier},client_phone.eq.${customerId},instagram_sender_id.eq.${customerId}`)
           .maybeSingle();
 
         if (!conv) {
@@ -100,7 +101,8 @@ export async function POST(req: NextRequest) {
             .from('conversations')
             .insert({
               organization_id: org.id,
-              client_phone: customerId, // Usamos o ID do Instagram como identificador
+              client_phone: clientIdentifier,
+              instagram_sender_id: customerId,
               channel: 'instagram',
               created_at: new Date().toISOString()
             })
@@ -114,13 +116,52 @@ export async function POST(req: NextRequest) {
           conv = newConv;
         }
 
-        // 2. Inserir a mensagem recebida do cliente
+        // 2. Inserir a mensagem
+        const senderType = isEcho ? 'atendente' : 'cliente';
         await supabase.from('messages').insert({
           conversation_id: conv.id,
-          sender_type: 'cliente',
+          sender_type: senderType,
           content: messageText,
           created_at: new Date(messagingEvent.timestamp || Date.now()).toISOString()
         });
+
+        // 3. Disparar análise de IA quando houver histórico suficiente
+        const { data: allMessages } = await supabase
+          .from('messages')
+          .select('sender_type, content, created_at')
+          .eq('conversation_id', conv.id)
+          .order('created_at', { ascending: true });
+
+        if (allMessages && allMessages.length >= 2) {
+          try {
+            const formattedForAi = allMessages.map((m: any) => ({
+              sender: (m.sender_type === 'agent' || m.sender_type === 'atendente' ? 'agent' : 'client') as 'agent' | 'client',
+              text: m.content,
+              timestamp: m.created_at,
+            }));
+            const analysisResult = await analyzeConversation(formattedForAi, org.id);
+            if (analysisResult) {
+              await supabase.from('analyses').insert({
+                conversation_id: conv.id,
+                overall_score: analysisResult.overall_score,
+                scores: analysisResult.scores,
+                summary: analysisResult.summary,
+                strengths: analysisResult.strengths,
+                weaknesses: analysisResult.weaknesses,
+                recommendations: analysisResult.recommendations,
+                objections: analysisResult.objections,
+              });
+            }
+          } catch (aiErr) {
+            console.error('[INSTAGRAM WEBHOOK] AI analysis error:', aiErr);
+          }
+        }
+
+        try {
+          revalidatePath(`/${org.slug}/dashboard`, 'page');
+        } catch (revErr) {
+          // Ignore revalidation errors in background
+        }
 
         console.log(`[INSTAGRAM WEBHOOK] Message saved for conversation ${conv.id}`);
       }

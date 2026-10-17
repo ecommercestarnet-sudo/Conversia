@@ -40,6 +40,11 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/signup')
+  const isPublicWebhook = request.nextUrl.pathname.startsWith('/api/webhook') || request.nextUrl.pathname.startsWith('/api/webhooks')
+
+  if (isPublicWebhook) {
+    return supabaseResponse
+  }
 
   // Se o usuário NÃO está logado e NÃO está em uma rota de auth, redirecione para login (incluindo o '/')
   if (!user && !isAuthRoute) {
