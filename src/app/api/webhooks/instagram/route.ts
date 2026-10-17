@@ -92,7 +92,39 @@ export async function POST(req: NextRequest) {
           (org.instagram_account_id && senderId === String(org.instagram_account_id))
         );
         const customerId = isEcho ? recipientId : senderId;
-        const messageText = message.text || message.title || (message.attachments ? '[Mídia do Instagram]' : '');
+
+        let messageText = message.text || message.title || '';
+        if (!messageText && Array.isArray(message.attachments) && message.attachments.length > 0) {
+          const audioAtt = message.attachments.find((a: any) => a.type === 'audio' && a.payload?.url);
+          if (audioAtt && process.env.OPENAI_API_KEY) {
+            try {
+              const audioRes = await fetch(audioAtt.payload.url);
+              if (audioRes.ok) {
+                const audioBuffer = await audioRes.arrayBuffer();
+                const formData = new FormData();
+                const blob = new Blob([audioBuffer], { type: 'audio/mp4' });
+                formData.append('file', blob, 'instagram_audio.mp4');
+                formData.append('model', 'whisper-1');
+                formData.append('language', 'pt');
+                const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+                  body: formData,
+                });
+                const whisperData = await whisperRes.json();
+                if (whisperData?.text) {
+                  messageText = whisperData.text.trim();
+                }
+              }
+            } catch (audioErr) {
+              console.error('[INSTAGRAM WEBHOOK] Audio transcription error:', audioErr);
+            }
+          }
+          if (!messageText) {
+            const attType = message.attachments[0]?.type || 'mídia';
+            messageText = `[Mídia do Instagram: ${attType}]`;
+          }
+        }
 
         if (!messageText || !customerId) continue;
 
