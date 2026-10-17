@@ -96,7 +96,7 @@ export default function AdminClient({ initialOrganizations }: AdminClientProps) 
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <img src="/Logo.png" alt="SupervisIA Logo" className="h-10 md:h-12 w-auto object-contain" />
+              <img src="/Logo-SupervisIA.png" alt="SupervisIA Logo" className="h-10 md:h-12 w-auto object-contain" />
               <span className="text-[10px] font-black bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200 uppercase tracking-widest shrink-0">
                 Superadmin
               </span>

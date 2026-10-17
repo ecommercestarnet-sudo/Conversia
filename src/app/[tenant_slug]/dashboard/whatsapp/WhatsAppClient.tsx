@@ -210,7 +210,7 @@ export default function WhatsAppClient({ company, lastStatusLog }: WhatsAppClien
             </button>
             <div>
               <div className="flex items-center gap-2.5">
-                <img src="/Logo.png" alt="SupervisIA Logo" className="h-8 w-auto object-contain" />
+                <img src="/Logo-SupervisIA.png" alt="SupervisIA Logo" className="h-8 w-auto object-contain" />
                 <h1 className="text-lg font-bold tracking-tight text-slate-900">
                   Conexão de WhatsApp
                 </h1>

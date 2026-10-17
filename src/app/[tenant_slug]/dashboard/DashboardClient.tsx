@@ -570,7 +570,7 @@ export default function DashboardClient({ initialConversations, organization, la
         <div className="h-[60px] bg-[#f0f2f5] px-4 flex items-center justify-between shrink-0 border-b border-[#e9edef]">
           <div className="flex items-center">
             <img 
-              src="/Logo.png" 
+              src="/Logo-SupervisIA.png" 
               alt="SupervisIA" 
               className="h-10 md:h-11 w-auto object-contain cursor-pointer hover:opacity-95 transition-opacity" 
               onClick={() => router.push(`/${tenantSlug}/dashboard`)}
@@ -989,7 +989,7 @@ export default function DashboardClient({ initialConversations, organization, la
             <footer className="h-[52px] bg-[#f0f2f5] px-4 flex items-center justify-between border-t border-[#d1d7db] text-xs text-[#54656f] shrink-0">
               <span className="flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-[#00a884]" />
-                Modo Auditoria Ativo — Responda diretamente pelo aplicativo WhatsApp do atendente
+                Modo Auditoria Ativo — Responda diretamente pelo aplicativo {selectedConversation?.channel === 'instagram' ? 'Instagram' : 'WhatsApp'} do atendente
               </span>
               {activeAnalysis && (
                 <button
@@ -1002,16 +1002,23 @@ export default function DashboardClient({ initialConversations, organization, la
             </footer>
           </div>
         ) : (
-          /* Empty State estilo WhatsApp Web quando nenhum chat está selecionado */
+          /* Empty State estilo WhatsApp / Instagram Web quando nenhum chat está selecionado */
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8 border-b-6 border-[#25d366]">
-            <div className="w-24 h-24 rounded-full bg-white/80 border border-[#d1d7db] flex items-center justify-center text-[#25d366] shadow-sm mb-6">
-              <Phone className="w-12 h-12 text-[#25d366]" />
+            <div className="flex items-center justify-center gap-3 mb-6">
+              <div className="w-20 h-20 rounded-full bg-white/80 border border-[#d1d7db] flex items-center justify-center text-[#25d366] shadow-sm">
+                <Phone className="w-10 h-10 text-[#25d366]" />
+              </div>
+              <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600 text-white flex items-center justify-center shadow-sm">
+                <svg className="w-10 h-10 fill-current" viewBox="0 0 24 24">
+                  <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.13-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                </svg>
+              </div>
             </div>
             <h2 className="text-2xl font-light text-[#41525d] mb-2 tracking-tight">
-              SupervisIA para WhatsApp
+              SupervisIA para WhatsApp e Instagram
             </h2>
             <p className="text-sm text-[#667781] max-w-md leading-relaxed mb-6">
-              Audite e monitore os atendimentos da sua equipe comercial com inteligência artificial diretamente conectado ao seu WhatsApp.
+              Audite e monitore os atendimentos da sua equipe comercial com inteligência artificial diretamente conectado ao seu WhatsApp e Instagram.
             </p>
             <div className="text-xs text-[#8696a0] flex items-center gap-1.5">
               <span>🔒 Mensagens protegidas e sincronizadas em tempo real.</span>
