@@ -63,13 +63,15 @@ export async function GET(req: NextRequest) {
 
     // 4. Salvar na organização no Supabase
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Localizar organização pelo slug (state)
-    const tenantSlug = state;
+    const tenantSlug = state?.trim();
+    console.log(`[INSTAGRAM OAUTH] Updating organization with slug: "${tenantSlug}", user: "${instagramUsername}", id: "${instagramUserId}"`);
+
     if (tenantSlug) {
-      await supabase
+      const { data: updatedOrg, error: updateError } = await supabase
         .from('organizations')
         .update({
           instagram_account_id: String(instagramUserId),
@@ -77,7 +79,15 @@ export async function GET(req: NextRequest) {
           instagram_access_token: accessToken,
           instagram_status: 'connected'
         })
-        .eq('slug', tenantSlug);
+        .eq('slug', tenantSlug)
+        .select('id, name, slug, instagram_status');
+
+      if (updateError) {
+        console.error('[INSTAGRAM OAUTH] Database update error:', updateError);
+        return NextResponse.redirect(`${baseUrl}/${tenantSlug}/dashboard/canais?error=db_error_${encodeURIComponent(updateError.message)}`);
+      } else {
+        console.log('[INSTAGRAM OAUTH] Database updated successfully:', updatedOrg);
+      }
     }
 
     return NextResponse.redirect(`${baseUrl}/${tenantSlug || ''}/dashboard/canais?status=instagram_connected`);
