@@ -4,7 +4,7 @@ import { runRealtimeAlertEngine, sweepPendingObjectionAlerts } from './realtime-
 function getEvolutionConfig() {
   let url = Deno.env.get('EVOLUTION_API_URL')
   let key = Deno.env.get('EVOLUTION_API_KEY')
-  if (!url || url.includes('216.238.122.167') || url.includes('qo61uu')) url = 'https://evoltion-evolution-api.6rjjw2.easypanel.host'
+  if (!url || url.includes('216.238.122.167') || url.includes('qo61uu')) url = 'http://20.124.187.47'
   if (!key || key === '2C916011-DD14-4A20-AE80-DB4AC1C91FFA') key = '429683C4C977415CAAFCCE10F7D57E11'
   return { evolutionUrl: url, evolutionKey: key }
 }
@@ -518,7 +518,7 @@ async function analyzeConversation(supabase: ReturnType<typeof createClient>, co
   let EVOLUTION_API_KEY = Deno.env.get('EVOLUTION_API_KEY')
 
   if (!EVOLUTION_API_URL || EVOLUTION_API_URL.includes('216.238.122.167') || EVOLUTION_API_URL.includes('qo61uu')) {
-    EVOLUTION_API_URL = 'https://evoltion-evolution-api.6rjjw2.easypanel.host'
+    EVOLUTION_API_URL = 'http://20.124.187.47'
   }
   if (!EVOLUTION_API_KEY || EVOLUTION_API_KEY === '2C916011-DD14-4A20-AE80-DB4AC1C91FFA') {
     EVOLUTION_API_KEY = '429683C4C977415CAAFCCE10F7D57E11'

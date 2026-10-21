@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
     if (!apiUrl || apiUrl.includes('216.238.122.167') || apiUrl.includes('qo61uu')) {
-      apiUrl = 'https://evoltion-evolution-api.6rjjw2.easypanel.host'
+      apiUrl = 'http://20.124.187.47'
     }
     if (!apiKey || apiKey === '2C916011-DD14-4A20-AE80-DB4AC1C91FFA') {
       apiKey = '429683C4C977415CAAFCCE10F7D57E11'

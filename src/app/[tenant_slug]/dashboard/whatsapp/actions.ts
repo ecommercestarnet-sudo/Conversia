@@ -34,8 +34,8 @@ if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
   }
 }
 
-if (!EVOLUTION_API_URL) {
-  EVOLUTION_API_URL = 'https://evoltion-evolution-api.6rjjw2.easypanel.host';
+if (!EVOLUTION_API_URL || EVOLUTION_API_URL.includes('easypanel')) {
+  EVOLUTION_API_URL = 'http://20.124.187.47';
 }
 if (!EVOLUTION_API_KEY) {
   EVOLUTION_API_KEY = '429683C4C977415CAAFCCE10F7D57E11';
