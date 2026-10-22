@@ -107,29 +107,42 @@ export default function DashboardClient({ initialConversations, organization, la
   const tenantSlug = params.tenant_slug as string;
 
   const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
+  const [selectedId, setSelectedId] = useState<string | number | null>(
+    initialConversations.length > 0 ? initialConversations[0].id : null
+  );
+  const [searchTerm, setSearchTerm] = useState('');
+  const [operatorFilter, setOperatorFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'em_risco' | 'perdida' | 'convertida'>('all');
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Sincroniza estado com as props quando a página for atualizada pelo servidor
   useEffect(() => {
     setConversations(initialConversations);
-  }, [conversations]);
+  }, [initialConversations]);
 
   const handleDeleteConversation = async (conversationId: string | number) => {
     if (!window.confirm('Tem certeza que deseja excluir esta conversa e todas as mensagens do banco de dados? Esta ação deixará o painel limpo.')) {
       return;
     }
 
+    // 1. Atualização Otimista Instantânea (Some da tela imediatamente sem refresh)
+    setConversations(prev => {
+      const remaining = prev.filter(c => c.id !== conversationId);
+      if (selectedId === conversationId) {
+        setSelectedId(remaining.length > 0 ? remaining[0].id : null);
+      }
+      return remaining;
+    });
+
     setIsDeleting(true);
     const res = await deleteConversation(conversationId);
     setIsDeleting(false);
 
     if (res.success) {
-      setConversations(prev => prev.filter(c => c.id !== conversationId));
-      if (selectedId === conversationId) {
-        setSelectedId(null);
-      }
       router.refresh();
     } else {
       alert('Erro ao excluir conversa: ' + res.error);
+      setConversations(initialConversations);
     }
   };
 
@@ -138,32 +151,34 @@ export default function DashboardClient({ initialConversations, organization, la
       return;
     }
 
+    // 1. Atualização Otimista Instantânea (A mensagem some no milissegundo do clique)
+    setConversations(prev => {
+      const updated = prev.map(c => {
+        if (c.id === conversationId) {
+          const updatedMsgs = (c.messages || []).filter(m => m.id !== messageId);
+          return { ...c, messages: updatedMsgs };
+        }
+        return c;
+      }).filter(c => (c.messages || []).length > 0);
+
+      // Se a conversa excluída ficou sem mensagens e era a selecionada
+      if (!updated.some(c => c.id === selectedId)) {
+        setSelectedId(updated.length > 0 ? updated[0].id : null);
+      }
+      return updated;
+    });
+
     setIsDeleting(true);
     const res = await deleteMessage(messageId, conversationId);
     setIsDeleting(false);
 
     if (res.success) {
-      setConversations(prev => {
-        return prev.map(c => {
-          if (c.id === conversationId) {
-            const updatedMsgs = (c.messages || []).filter(m => m.id !== messageId);
-            return { ...c, messages: updatedMsgs };
-          }
-          return c;
-        }).filter(c => (c.messages || []).length > 0);
-      });
       router.refresh();
     } else {
       alert('Erro ao excluir mensagem: ' + res.error);
+      setConversations(initialConversations);
     }
   };
-
-  const [searchTerm, setSearchTerm] = useState('');
-  const [operatorFilter, setOperatorFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'em_risco' | 'perdida' | 'convertida'>('all');
-  const [selectedId, setSelectedId] = useState<string | number | null>(
-    conversations.length > 0 ? conversations[0].id : null
-  );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
