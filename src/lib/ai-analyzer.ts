@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY || 'sk-build-placeholder',
 });
 
 let EVOLUTION_API_URL = process.env.EVOLUTION_API_URL;

@@ -30,7 +30,9 @@ interface AlertRules {
   cooldown_minutes?: number
   modo_teste?: boolean
   alert_phone_override?: string
+  secondary_alert_phone?: string
   default_seller_phone?: string
+  ignored_phones?: Array<{ phone: string; label?: string }> | string[]
 }
 
 interface AiVerdict {
@@ -176,13 +178,22 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     }
   }
 
-  // Telefones destino
-  const supervisorPhone = (rules.alert_phone_override || '').trim() || org.owner_whatsapp
-  if (!supervisorPhone) {
-    console.warn(`${tag} Telefone do gestor/supervisor não configurado.`)
+  // Telefones destino (Suporta Gestor Principal + Segundo WhatsApp de Validação / Testes)
+  const rawSupervisor = (rules.alert_phone_override || '').trim() || org.owner_whatsapp || ''
+  const secondaryPhone = (rules.secondary_alert_phone || '').trim()
+
+  const targetPhones: string[] = []
+  `${rawSupervisor},${secondaryPhone}`.split(/[,;\n]+/).forEach(p => {
+    const clean = p.replace(/\D/g, '')
+    if (clean.length >= 8 && !targetPhones.includes(clean)) {
+      targetPhones.push(clean)
+    }
+  })
+
+  if (targetPhones.length === 0) {
+    console.warn(`${tag} Nenhum telefone de alerta configurado.`)
     return
   }
-  const cleanSupervisor = supervisorPhone.replace(/\D/g, '')
 
   // Extrai os últimos 8 dígitos (número base sem DDD e sem 9º dígito móvel)
   const getLast8 = (num: string) => {
@@ -207,9 +218,15 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     .eq('company_id', conv.organization_id)
 
   const internalNumbers = new Set<string>()
-  if (supervisorPhone) internalNumbers.add(cleanSupervisor)
+  targetPhones.forEach(p => internalNumbers.add(p))
   if (org.owner_whatsapp) internalNumbers.add(String(org.owner_whatsapp).replace(/\D/g, ''))
   if (rules.default_seller_phone) internalNumbers.add(String(rules.default_seller_phone).replace(/\D/g, ''))
+  if (rules.ignored_phones && Array.isArray(rules.ignored_phones)) {
+    rules.ignored_phones.forEach((item: any) => {
+      const p = typeof item === 'string' ? item : item?.phone
+      if (p) internalNumbers.add(String(p).replace(/\D/g, ''))
+    })
+  }
 
   if (allOps && allOps.length > 0) {
     allOps.forEach((op: any) => {
@@ -440,19 +457,25 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     (sugestao ? `🎯 *Copie e envie agora para o cliente:*\n"${sugestao}"` : '').trimEnd()
 
   // =========================================================================
-  // 2. Disparo Único para o GESTOR (supervisor_phone)
+  // 2. Disparo para os GESTORES/AUDITORES CADASTRADOS (Suporta múltiplos números)
   // =========================================================================
-  console.log(`${tag} Enviando alerta unificado para o gestor em ${cleanSupervisor}...`)
-  const supervisorResp = await fetch(`${opts.evolutionUrl.replace(/\/$/, '')}/message/sendText/${org.evolution_instance_name}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: opts.evolutionKey },
-    body: JSON.stringify({ number: cleanSupervisor, text: mensagemUnificada }),
-  })
+  for (const phone of targetPhones) {
+    console.log(`${tag} Enviando alerta unificado para ${phone}...`)
+    try {
+      const supervisorResp = await fetch(`${opts.evolutionUrl.replace(/\/$/, '')}/message/sendText/${org.evolution_instance_name}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: opts.evolutionKey },
+        body: JSON.stringify({ number: phone, text: mensagemUnificada }),
+      })
 
-  if (!supervisorResp.ok) {
-    console.error(`${tag} Falha ao enviar alerta unificado (${supervisorResp.status}):`, await supervisorResp.text())
-  } else {
-    console.log(`${tag} Alerta unificado enviado com sucesso para ${cleanSupervisor}.`)
+      if (!supervisorResp.ok) {
+        console.error(`${tag} Falha ao enviar alerta unificado para ${phone} (${supervisorResp.status}):`, await supervisorResp.text())
+      } else {
+        console.log(`${tag} Alerta unificado enviado com sucesso para ${phone}.`)
+      }
+    } catch (err) {
+      console.error(`${tag} Erro na requisição de envio para ${phone}:`, err)
+    }
   }
 
   // Atualiza banco de dados com registro do alerta e timestamp para cooldown

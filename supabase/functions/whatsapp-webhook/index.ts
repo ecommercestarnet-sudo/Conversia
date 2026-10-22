@@ -314,6 +314,66 @@ Deno.serve(async (req) => {
           return
         }
 
+        // Check if clientPhone is in the ignored list or belongs to the internal team (supervisor, owner, ignored exceptions)
+        if (orgId && clientPhone) {
+          try {
+            const { data: playbookData } = await supabase
+              .from('ai_playbooks')
+              .select('alert_rules')
+              .eq('organization_id', orgId)
+              .maybeSingle()
+
+            const alertRules = (playbookData?.alert_rules || {}) as any
+            const ignoredPhones: string[] = []
+
+            if (alertRules.ignored_phones && Array.isArray(alertRules.ignored_phones)) {
+              alertRules.ignored_phones.forEach((item: any) => {
+                const p = typeof item === 'string' ? item : item?.phone
+                if (p) ignoredPhones.push(String(p).replace(/\D/g, ''))
+              })
+            }
+            if (alertRules.alert_phone_override) {
+              String(alertRules.alert_phone_override).split(/[,;\n]+/).forEach((p: string) => {
+                const clean = p.replace(/\D/g, '')
+                if (clean) ignoredPhones.push(clean)
+              })
+            }
+            if (alertRules.secondary_alert_phone) {
+              String(alertRules.secondary_alert_phone).split(/[,;\n]+/).forEach((p: string) => {
+                const clean = p.replace(/\D/g, '')
+                if (clean) ignoredPhones.push(clean)
+              })
+            }
+
+            // Also check owner_whatsapp from organization
+            const { data: orgInfo } = await supabase
+              .from('organizations')
+              .select('owner_whatsapp')
+              .eq('id', orgId)
+              .maybeSingle()
+            if (orgInfo?.owner_whatsapp) {
+              ignoredPhones.push(String(orgInfo.owner_whatsapp).replace(/\D/g, ''))
+            }
+
+            const cleanClient = String(clientPhone).replace(/\D/g, '')
+            const clientLast8 = cleanClient.length >= 8 ? cleanClient.slice(-8) : cleanClient
+
+            const isIgnored = ignoredPhones.some(ig => {
+              if (!ig) return false
+              const igClean = ig.replace(/\D/g, '')
+              if (cleanClient === igClean) return true
+              return clientLast8.length === 8 && igClean.length >= 8 && igClean.slice(-8) === clientLast8
+            })
+
+            if (isIgnored) {
+              console.log(`[whatsapp-webhook] Mensagem descartada: número ${cleanClient} está na lista de exceções/equipe interna. Nenhuma conversa ou mensagem será registrada no sistema.`)
+              return
+            }
+          } catch (filterErr) {
+            console.error('[whatsapp-webhook] Erro ao verificar lista de números ignorados:', filterErr)
+          }
+        }
+
         let conversationId: string | number | null = null
 
         // Search or create conversation in conversations table, filtering by both phone and organization

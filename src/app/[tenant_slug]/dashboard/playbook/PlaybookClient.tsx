@@ -12,7 +12,10 @@ import {
   Sliders,
   CheckCircle,
   AlertTriangle,
-  LogOut
+  LogOut,
+  Plus,
+  Trash2,
+  PhoneOff
 } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { logout } from '@/app/auth-actions';
@@ -37,7 +40,12 @@ interface Playbook {
     alert_on_unanswered_lead?: boolean;
     min_confidence_score: number;
     wait_minutes_before_alert?: number;
+    cooldown_minutes?: number;
+    modo_teste?: boolean;
     alert_phone_override?: string;
+    secondary_alert_phone?: string;
+    default_seller_phone?: string;
+    ignored_phones?: Array<{ phone: string; label?: string }>;
   } | null;
 }
 
@@ -87,12 +95,48 @@ export default function PlaybookClient({ company, initialPlaybook, lastStatusLog
     cooldown_minutes: 15,
     modo_teste: false,
     alert_phone_override: '',
-    default_seller_phone: ''
+    secondary_alert_phone: '',
+    default_seller_phone: '',
+    ignored_phones: [] as Array<{ phone: string; label?: string }>
   };
   const [alertRules, setAlertRules] = useState({
     ...defaultAlertRules,
     ...(initialPlaybook?.alert_rules || {})
   });
+
+  // State for adding ignored numbers
+  const [newIgnoredPhone, setNewIgnoredPhone] = useState('');
+  const [newIgnoredLabel, setNewIgnoredLabel] = useState('');
+
+  const handleAddIgnoredPhone = (e?: React.MouseEvent) => {
+    if (e) e.preventDefault();
+    const raw = newIgnoredPhone.trim();
+    if (!raw) return;
+    const clean = raw.replace(/\D/g, '');
+    if (clean.length < 8) {
+      alert('Por favor, informe um número de telefone válido (com DDD).');
+      return;
+    }
+    const currentList: Array<{ phone: string; label?: string }> = (alertRules.ignored_phones || []).map((item: any) =>
+      typeof item === 'string' ? { phone: item } : item
+    );
+    if (currentList.some(item => item.phone.replace(/\D/g, '') === clean)) {
+      alert('Este número já está na lista de exceções.');
+      return;
+    }
+    const updated = [...currentList, { phone: raw, label: newIgnoredLabel.trim() || undefined }];
+    setAlertRules({ ...alertRules, ignored_phones: updated });
+    setNewIgnoredPhone('');
+    setNewIgnoredLabel('');
+  };
+
+  const handleRemoveIgnoredPhone = (indexToRemove: number) => {
+    const currentList: Array<{ phone: string; label?: string }> = (alertRules.ignored_phones || []).map((item: any) =>
+      typeof item === 'string' ? { phone: item } : item
+    );
+    const updated = currentList.filter((_, idx) => idx !== indexToRemove);
+    setAlertRules({ ...alertRules, ignored_phones: updated });
+  };
 
   if (!company) {
     return (
@@ -500,14 +544,14 @@ Fatores que geram perda de pontos:
 
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      WhatsApp do Gestor (Supervisor)
+                      WhatsApp do Gestor (Supervisor Principal)
                     </label>
                     <p className="text-[11px] text-slate-500 mb-2">
-                      Recebe relatório analítico e auditoria de processo.
+                      Recebe relatório analítico e auditoria de processo em tempo real.
                     </p>
                     <input
                       type="text"
-                      placeholder="Ex: 5585999990000 (Dono)"
+                      placeholder="Ex: 5585999990000 (Gestor)"
                       value={alertRules.alert_phone_override || ''}
                       onChange={(e) => setAlertRules({ ...alertRules, alert_phone_override: e.target.value })}
                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
@@ -516,10 +560,26 @@ Fatores que geram perda de pontos:
 
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Segundo WhatsApp de Alerta (Acompanhamento / Testes)
+                    </label>
+                    <p className="text-[11px] text-slate-500 mb-2">
+                      Recebe os mesmos alertas simultaneamente para você auditar a IA durante a fase piloto.
+                    </p>
+                    <input
+                      type="text"
+                      placeholder="Ex: 5585992178768 (Seu WhatsApp)"
+                      value={alertRules.secondary_alert_phone || ''}
+                      onChange={(e) => setAlertRules({ ...alertRules, secondary_alert_phone: e.target.value })}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 md:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
                       WhatsApp do Vendedor (Padrão / Testes)
                     </label>
                     <p className="text-[11px] text-slate-500 mb-2">
-                      Recebe apenas a dica rápida pedagógica (se não atribuído).
+                      Recebe apenas a dica rápida pedagógica (se não atribuído ao operador no sistema).
                     </p>
                     <input
                       type="text"
@@ -529,6 +589,83 @@ Fatores que geram perda de pontos:
                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
                     />
                   </div>
+                </div>
+
+                {/* Lista de Exceções / Números Ignorados */}
+                <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <PhoneOff className="w-4 h-4 text-slate-600" />
+                        <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                          Números Ignorados / Lista de Exceções
+                        </h3>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Mensagens trocadas com estes números (ex: supervisor conversando com o vendedor, fornecedores ou uso pessoal) 
+                        <strong> NÃO serão registradas no sistema</strong> e <strong>NÃO gerarão alertas</strong>.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Formulário de Adição */}
+                  <div className="flex flex-col sm:flex-row items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="DDD + Telefone (ex: 5585999990000)"
+                      value={newIgnoredPhone}
+                      onChange={(e) => setNewIgnoredPhone(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddIgnoredPhone(); } }}
+                      className="w-full sm:w-1/2 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Identificação (ex: Supervisor Carlos)"
+                      value={newIgnoredLabel}
+                      onChange={(e) => setNewIgnoredLabel(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddIgnoredPhone(); } }}
+                      className="w-full sm:w-1/3 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddIgnoredPhone}
+                      className="w-full sm:w-auto px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-sm"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Adicionar
+                    </button>
+                  </div>
+
+                  {/* Listagem de Números Cadastrados */}
+                  {alertRules.ignored_phones && alertRules.ignored_phones.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {alertRules.ignored_phones.map((item: any, idx: number) => {
+                        const phone = typeof item === 'string' ? item : item.phone;
+                        const label = typeof item === 'string' ? null : item.label;
+                        return (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-2 bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-xs text-slate-700 shadow-sm group hover:border-slate-300"
+                          >
+                            <span className="font-semibold text-slate-800">{phone}</span>
+                            {label && <span className="text-[11px] text-slate-500">({label})</span>}
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveIgnoredPhone(idx)}
+                              title="Remover da lista de exceções"
+                              className="text-slate-400 hover:text-rose-600 transition-colors p-0.5 cursor-pointer ml-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 italic">
+                      Nenhum número na lista de exceções. Qualquer mensagem recebida será processada normalmente pelo sistema.
+                    </p>
+                  )}
                 </div>
 
                 {/* Anti-spam Trava & Modo Teste */}

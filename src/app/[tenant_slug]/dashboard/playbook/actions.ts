@@ -3,16 +3,24 @@
 import { createClient } from '@/lib/auth-server';
 import { revalidatePath } from 'next/cache';
 
+export interface IgnoredPhoneItem {
+  phone: string;
+  label?: string;
+}
+
 export interface AlertRules {
   alert_on_price_unhandled: boolean;
   alert_on_dry_price: boolean;
   alert_on_drop_unhandled: boolean;
+  alert_on_unanswered_lead?: boolean;
   min_confidence_score: number;
   wait_minutes_before_alert?: number;
   cooldown_minutes?: number;
   modo_teste?: boolean;
   alert_phone_override?: string;
+  secondary_alert_phone?: string;
   default_seller_phone?: string;
+  ignored_phones?: IgnoredPhoneItem[];
 }
 
 export interface PlaybookFormData {
