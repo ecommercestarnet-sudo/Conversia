@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   BarChart3, 
   MessageSquare, 
@@ -30,11 +30,13 @@ import {
   ChevronRight,
   User,
   ShieldCheck,
-  LayoutDashboard
+  LayoutDashboard,
+  Trash2
 } from 'lucide-react';
 import { useRouter, useParams } from 'next/navigation';
 import { logout } from '@/app/auth-actions';
 import { assignOperatorToConversation } from './settings/actions';
+import { deleteConversation, deleteMessage } from './actions';
 
 interface Analysis {
   id: string | number;
@@ -104,11 +106,63 @@ export default function DashboardClient({ initialConversations, organization, la
   const params = useParams();
   const tenantSlug = params.tenant_slug as string;
 
+  const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    setConversations(initialConversations);
+  }, [conversations]);
+
+  const handleDeleteConversation = async (conversationId: string | number) => {
+    if (!window.confirm('Tem certeza que deseja excluir esta conversa e todas as mensagens do banco de dados? Esta ação deixará o painel limpo.')) {
+      return;
+    }
+
+    setIsDeleting(true);
+    const res = await deleteConversation(conversationId);
+    setIsDeleting(false);
+
+    if (res.success) {
+      setConversations(prev => prev.filter(c => c.id !== conversationId));
+      if (selectedId === conversationId) {
+        setSelectedId(null);
+      }
+      router.refresh();
+    } else {
+      alert('Erro ao excluir conversa: ' + res.error);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string | number, conversationId: string | number) => {
+    if (!window.confirm('Deseja excluir esta mensagem do banco de dados?')) {
+      return;
+    }
+
+    setIsDeleting(true);
+    const res = await deleteMessage(messageId, conversationId);
+    setIsDeleting(false);
+
+    if (res.success) {
+      setConversations(prev => {
+        return prev.map(c => {
+          if (c.id === conversationId) {
+            const updatedMsgs = (c.messages || []).filter(m => m.id !== messageId);
+            return { ...c, messages: updatedMsgs };
+          }
+          return c;
+        }).filter(c => (c.messages || []).length > 0);
+      });
+      router.refresh();
+    } else {
+      alert('Erro ao excluir mensagem: ' + res.error);
+    }
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
   const [operatorFilter, setOperatorFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'em_risco' | 'perdida' | 'convertida'>('all');
   const [selectedId, setSelectedId] = useState<string | number | null>(
-    initialConversations.length > 0 ? initialConversations[0].id : null
+    conversations.length > 0 ? conversations[0].id : null
   );
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
@@ -261,7 +315,7 @@ export default function DashboardClient({ initialConversations, organization, la
         conversionRate: s.total > 0 ? Math.round((s.convertidas / s.total) * 100) : 0,
       }))
       .sort((a, b) => b.convertidas - a.convertidas || b.avgScore - a.avgScore);
-  }, [initialConversations, operators]);
+  }, [conversations, operators]);
 
   // Calculations & Metrics
   const metrics = useMemo(() => {
@@ -301,7 +355,7 @@ export default function DashboardClient({ initialConversations, organization, la
     return {
       averageScore,
       analyzedCount,
-      totalCount: initialConversations.length,
+      totalCount: conversations.length,
       emRiscoCount,
       perdidasCount,
       convertidasCount,
@@ -313,7 +367,7 @@ export default function DashboardClient({ initialConversations, organization, la
 
   // Filter conversations based on search term, operator filter, and commercial status
   const filteredConversations = useMemo(() => {
-    return initialConversations.filter(conv => {
+    return conversations.filter(conv => {
       const phone = conv.client_phone || '';
       const matchesSearch = phone.includes(searchTerm.replace(/[^0-9]/g, '')) || phone.includes(searchTerm);
       const matchesOperator = operatorFilter === 'all' || 
@@ -325,14 +379,14 @@ export default function DashboardClient({ initialConversations, organization, la
 
       return matchesSearch && matchesOperator && matchesStatus;
     });
-  }, [initialConversations, searchTerm, operatorFilter, statusFilter]);
+  }, [conversations, searchTerm, operatorFilter, statusFilter]);
 
   // Resolve active selection
   const selectedConversation = useMemo(() => {
-    const found = initialConversations.find(c => c.id === selectedId);
+    const found = conversations.find(c => c.id === selectedId);
     if (found) return found;
-    return initialConversations.length > 0 ? initialConversations[0] : null;
-  }, [initialConversations, selectedId]);
+    return conversations.length > 0 ? conversations[0] : null;
+  }, [conversations, selectedId]);
 
   const activeAnalysis = selectedConversation ? getAnalysis(selectedConversation) : null;
   
@@ -627,7 +681,7 @@ export default function DashboardClient({ initialConversations, organization, la
                   : 'bg-[#f0f2f5] text-[#54656f] hover:bg-[#e9edef]'
               }`}
             >
-              Tudo ({initialConversations.length})
+              Tudo ({conversations.length})
             </button>
             <button
               onClick={() => setStatusFilter(statusFilter === 'em_risco' ? 'all' : 'em_risco')}
@@ -894,6 +948,17 @@ export default function DashboardClient({ initialConversations, organization, la
                   </select>
                 </div>
 
+                {/* Botão Excluir Conversa (Lixeira) */}
+                <button
+                  onClick={() => handleDeleteConversation(selectedConversation.id)}
+                  disabled={isDeleting}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                  title="Excluir esta conversa e todas as mensagens do banco de dados"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{isDeleting ? 'Excluindo...' : 'Excluir Conversa'}</span>
+                </button>
+
                 {/* Botão Ver Auditoria Comercial (IA) */}
                 {activeAnalysis && (
                   <button
@@ -952,10 +1017,21 @@ export default function DashboardClient({ initialConversations, organization, la
                   return (
                     <div
                       key={msg.id}
-                      className={`flex flex-col max-w-[80%] md:max-w-[65%] ${
-                        isAgent ? 'self-end items-end' : 'self-start items-start'
+                      className={`group flex items-end gap-1.5 max-w-[85%] md:max-w-[70%] ${
+                        isAgent ? 'self-end flex-row-reverse' : 'self-start flex-row'
                       }`}
                     >
+                      {/* Botão de Excluir Mensagem Individual no hover */}
+                      <button
+                        onClick={() => handleDeleteMessage(msg.id, selectedConversation.id)}
+                        disabled={isDeleting}
+                        title="Apagar mensagem do banco de dados"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer mb-3 shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      <div className="flex flex-col">
                       {/* Message Bubble WhatsApp */}
                       <div
                         className={`rounded-lg px-3 py-2 text-sm shadow-xs relative leading-relaxed ${
@@ -979,6 +1055,7 @@ export default function DashboardClient({ initialConversations, organization, la
                       <span className="text-[10px] text-[#8696a0] mt-0.5 px-1 font-medium">
                         {isAgent ? 'Atendente' : 'Cliente'}
                       </span>
+                      </div>
                     </div>
                   );
                 })
