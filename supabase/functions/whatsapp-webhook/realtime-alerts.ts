@@ -181,9 +181,10 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
   // Telefones destino (Suporta Gestor Principal + Segundo WhatsApp de Validação / Testes)
   const rawSupervisor = (rules.alert_phone_override || '').trim() || org.owner_whatsapp || ''
   const secondaryPhone = (rules.secondary_alert_phone || '').trim()
+  const rawCombined = `${rawSupervisor},${secondaryPhone}`
 
   const targetPhones: string[] = []
-  `${rawSupervisor},${secondaryPhone}`.split(/[,;\n]+/).forEach(p => {
+  rawCombined.split(/[,;\n]+/).forEach(p => {
     const clean = p.replace(/\D/g, '')
     if (clean.length >= 8 && !targetPhones.includes(clean)) {
       targetPhones.push(clean)
