@@ -215,7 +215,7 @@ Deno.serve(async (req) => {
         msgCall: "",
         groupsIgnore: false,
         alwaysOnline: true,
-        readMessages: true,
+        readMessages: false,
         readStatus: false,
         syncFullHistory: false
       })
