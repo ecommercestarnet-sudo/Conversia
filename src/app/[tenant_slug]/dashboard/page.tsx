@@ -33,7 +33,11 @@ export default async function DashboardPage({ params }: PageProps) {
       id,
       client_phone,
       channel,
+      status,
       operator_id,
+      alert_sent,
+      alerts_sent,
+      last_alert_at,
       created_at,
       analyses (
         id,

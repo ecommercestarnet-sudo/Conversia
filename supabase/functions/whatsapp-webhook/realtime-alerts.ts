@@ -479,8 +479,9 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
     }
   }
 
-  // Atualiza banco de dados com registro do alerta e timestamp para cooldown
+  // Atualiza banco de dados com registro do alerta, status em risco e timestamp para cooldown
   const updateData: Record<string, unknown> = {
+    status: 'em_risco',
     alert_sent: true,
     last_alert_at: new Date().toISOString(),
   }
@@ -489,6 +490,46 @@ export async function runRealtimeAlertEngine(supabase: SB, conversationId: strin
   }
 
   await supabase.from('conversations').update(updateData).eq('id', conversationId)
+
+  // Salva ou atualiza o veredito da IA na tabela 'analyses' para registrar no sistema imediatamente
+  try {
+    const scoresData = {
+      empathy: 50,
+      response_time: Math.max(20, Math.min(100, Math.round(100 - minutesSinceLast * 5))),
+      investigation: verdict.houve_investigacao_previa ? 80 : 20,
+      closing: verdict.vendedor_finalizou_com_pergunta ? 80 : 20,
+      status_comercial: 'em_risco',
+      motivo_perda: verdict.motivo_resumido || LABEL_BY_INFRACAO[finalInfracao] || 'Falha de processo comercial',
+      acao_resgate_sugerida: verdict.o_que_mandar_agora || verdict.dica_treinador || 'Reconectar com o lead com pergunta aberta.',
+      _raciocinio_previo: {
+        status_comercial: 'em_risco',
+        motivo_perda: verdict.motivo_resumido,
+        infracao: finalInfracao,
+        confianca: verdict.confianca,
+        dica_treinador: verdict.dica_treinador,
+        o_que_mandar_agora: verdict.o_que_mandar_agora
+      }
+    }
+
+    const { error: analysisError } = await supabase.from('analyses').upsert({
+      conversation_id: conversationId,
+      overall_score: 45,
+      scores: scoresData,
+      summary: verdict.motivo_resumido || `Alerta disparado: ${LABEL_BY_INFRACAO[finalInfracao]}`,
+      strengths: ['Atendimento em andamento'],
+      weaknesses: [verdict.motivo_resumido || LABEL_BY_INFRACAO[finalInfracao]],
+      recommendations: [verdict.dica_treinador, verdict.o_que_mandar_agora].filter(Boolean),
+      objections: verdict.trecho_cliente ? [verdict.trecho_cliente] : []
+    }, { onConflict: 'conversation_id' })
+
+    if (analysisError) {
+      console.warn(`${tag} Falha ao salvar registro em 'analyses':`, analysisError)
+    } else {
+      console.log(`${tag} Análise em tempo real salva com sucesso em 'analyses' para conversa ${conversationId}.`)
+    }
+  } catch (e) {
+    console.warn(`${tag} Erro ao gravar analysis em tempo real:`, e)
+  }
 }
 
 async function askAi(apiKey: string, ctx: {

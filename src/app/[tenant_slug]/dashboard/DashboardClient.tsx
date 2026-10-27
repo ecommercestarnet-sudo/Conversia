@@ -71,7 +71,11 @@ interface Conversation {
   id: string | number;
   client_phone: string;
   channel?: 'whatsapp' | 'instagram' | string;
+  status?: string;
   operator_id?: string | null;
+  alert_sent?: boolean;
+  alerts_sent?: string[];
+  last_alert_at?: string;
   created_at: string;
   analyses?: Analysis[] | Analysis | null;
   messages?: Message[];
@@ -214,6 +218,25 @@ export default function DashboardClient({ initialConversations, organization, la
   } => {
     const analysis = getAnalysis(conv);
     if (!analysis) {
+      if (conv.status === 'em_risco' || conv.alert_sent || (conv.alerts_sent && conv.alerts_sent.length > 0)) {
+        const lastInfracao = conv.alerts_sent && conv.alerts_sent.length > 0 
+          ? conv.alerts_sent[conv.alerts_sent.length - 1] 
+          : 'Falha de Processo Comercial';
+        const labelInfracao = lastInfracao === 'panfletagem' 
+          ? 'Envio de Preço sem Diagnóstico / sem Fechamento (Panfletagem)' 
+          : lastInfracao === 'objecao_ignorada'
+            ? 'Objeção do Cliente Ignorada ou Abandonada'
+            : lastInfracao === 'desistencia_passiva'
+              ? 'Desistência Aceita sem Tentativa de Retenção'
+              : lastInfracao === 'lead_sem_resposta'
+                ? 'Lead Aguardando Resposta (Tempo Excedido)'
+                : String(lastInfracao);
+        return {
+          status: 'em_risco',
+          motivo: labelInfracao,
+          acao: 'Intervir na conversa ou aplicar script de resgate.'
+        };
+      }
       return { status: 'em_andamento', motivo: null, acao: null };
     }
 
@@ -226,6 +249,10 @@ export default function DashboardClient({ initialConversations, organization, la
       (raciocinio.conversa_convertida ? 'convertida' : 
        analysis.overall_score >= 80 ? 'convertida' : 
        analysis.overall_score <= 50 ? 'perdida' : 'em_risco');
+
+    if (status === 'em_andamento' && (conv.status === 'em_risco' || conv.alert_sent || (conv.alerts_sent && conv.alerts_sent.length > 0))) {
+      status = 'em_risco';
+    }
 
     let motivo: string | null = 
       scores.motivo_perda || 
@@ -346,18 +373,18 @@ export default function DashboardClient({ initialConversations, organization, la
       if (analysis) {
         analyzedCount++;
         totalScore += analysis.overall_score;
-
-        const { status, motivo } = getCommercialStatus(conv);
-        if (status === 'em_risco') emRiscoCount++;
-        else if (status === 'perdida') {
-          perdidasCount++;
-          if (motivo) {
-            const cleanMotivo = motivo.replace(/^FALHA GRAVE:\s*/i, '').trim();
-            lossReasonCounts[cleanMotivo] = (lossReasonCounts[cleanMotivo] || 0) + 1;
-          }
-        }
-        else if (status === 'convertida') convertidasCount++;
       }
+
+      const { status, motivo } = getCommercialStatus(conv);
+      if (status === 'em_risco') emRiscoCount++;
+      else if (status === 'perdida') {
+        perdidasCount++;
+        if (motivo) {
+          const cleanMotivo = motivo.replace(/^FALHA GRAVE:\s*/i, '').trim();
+          lossReasonCounts[cleanMotivo] = (lossReasonCounts[cleanMotivo] || 0) + 1;
+        }
+      }
+      else if (status === 'convertida') convertidasCount++;
     });
 
     const averageScore = analyzedCount > 0 ? Math.round(totalScore / analyzedCount) : 0;
@@ -975,7 +1002,7 @@ export default function DashboardClient({ initialConversations, organization, la
                 </button>
 
                 {/* Botão Ver Auditoria Comercial (IA) */}
-                {activeAnalysis && (
+                {(activeAnalysis || (selectedConversation && (getCommercialStatus(selectedConversation).status === 'em_risco' || selectedConversation.alert_sent))) && (
                   <button
                     onClick={() => setIsAuditOpen(true)}
                     className="px-3.5 py-1.5 bg-[#00a884] hover:bg-[#008f6f] active:bg-[#007a5e] text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
@@ -986,6 +1013,40 @@ export default function DashboardClient({ initialConversations, organization, la
                 )}
               </div>
             </header>
+
+            {/* Rescue Alert Bar (quando a IA detecta risco ou panfletagem) */}
+            {(() => {
+              const comm = getCommercialStatus(selectedConversation);
+              if (comm.status !== 'em_risco' && comm.status !== 'perdida') return null;
+              return (
+                <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between text-xs text-amber-950 shrink-0 shadow-xs">
+                  <div className="flex items-start sm:items-center gap-2">
+                    <span className="text-base leading-none">🚨</span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-amber-900 uppercase text-[10px] tracking-wider px-1.5 py-0.5 bg-amber-200/80 rounded">
+                          {comm.status === 'em_risco' ? 'Venda em Risco' : 'Venda Perdida'}
+                        </span>
+                        <span className="font-semibold text-amber-900">{comm.motivo || 'Falha de processo comercial detectada.'}</span>
+                      </div>
+                      {comm.acao && (
+                        <p className="text-[11px] text-amber-800 mt-1">
+                          💡 <strong>Ação Recomendada:</strong> {comm.acao}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {(activeAnalysis || comm.status === 'em_risco') && (
+                    <button
+                      onClick={() => setIsAuditOpen(true)}
+                      className="text-[11px] font-bold bg-amber-200 hover:bg-amber-300 text-amber-900 px-2.5 py-1 rounded-md transition-colors shrink-0 ml-3 cursor-pointer"
+                    >
+                      Ver Auditoria
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Waiting Alert Bar (se cliente estiver esperando resposta) */}
             {(() => {
